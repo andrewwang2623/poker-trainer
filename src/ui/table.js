@@ -1,6 +1,5 @@
 import { STAKES, TIER_LABELS } from '../shared/schemas.js';
 import { cards, chips, element } from './dom.js';
-import { straddlePost } from './straddle.js';
 
 const POT_LABEL = 'Pot';
 
@@ -87,7 +86,8 @@ export function renderTable(state, revealDelays = [], revealHands = false, rabbi
   table.append(inner);
 
   const shown = new Set(state.events.filter(event => event.type === 'showdown').map(event => event.seat));
-  const straddle = straddlePost(state);
+  const straddle = state.events.find(event => event.type === 'postBlind' && event.blind === 'straddle' &&
+    event.seat === state.straddleSeat);
   const actions = state.events.filter(event => event.type === 'action');
   const lastAction = actions.at(-1);
   const actionStreet = ['complete', 'showdown'].includes(state.street) ? lastAction?.street : state.street;
@@ -116,7 +116,7 @@ export function renderTable(state, revealDelays = [], revealHands = false, rabbi
     const stack = element('span', 'seat-stack', chips(player.stack));
     const details = element('div', 'seat-details');
     details.append(nameLine, badge, stack);
-    if (straddle?.seat === player.seat) details.append(element('span', 'straddle-badge', 'Straddle · 2 bb'));
+    if (straddle?.seat === player.seat) details.append(element('span', 'straddle-badge', `Straddle · ${chips(straddle.amount)}`));
     const top = element('div', 'seat-top');
     top.append(avatar, details);
     seat.append(top);

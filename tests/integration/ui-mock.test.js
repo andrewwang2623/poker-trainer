@@ -86,3 +86,15 @@ test('fold awards the blind pot, and next hand applies stakes and mix', () => {
   assert.equal(state.players[4].committedStreet, STAKES.high.sbChips);
   assert.ok(state.players.filter(player => !player.isHero).every(player => player.profile.tier === 'toughReg'));
 });
+
+test('mock tier flags match the native bots: both regs use charts, only tough regs mix', () => {
+  for (const tier of TIERS) {
+    const poolOverride = Object.fromEntries(TIERS.map(key => [key, key === tier ? 1 : 0]));
+    const state = createMockGameState({ poolOverride });
+    for (const { profile } of state.players.filter(player => !player.isHero)) {
+      assert.equal(profile.tier, tier);
+      assert.equal(profile.usesCharts, tier === 'midReg' || tier === 'toughReg');
+      assert.equal(profile.mixing, tier === 'toughReg');
+    }
+  }
+});

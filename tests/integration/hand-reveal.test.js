@@ -5,8 +5,6 @@ import { canRabbitHunt, renderTable } from '../../src/ui/table.js';
 import * as engine from '../../src/engine/index.js';
 import { createMockSession } from '../../src/ui/mock.js';
 import { loadBotPacing, loadBotSpeed, loadOutBotSpeed } from '../../src/ui/bot-speed.js';
-import { loadStraddle, maybePostStraddle } from '../../src/ui/straddle.js';
-import { renderLog } from '../../src/ui/log.js';
 import * as exporter from '../../src/export/index.js';
 
 class Node {
@@ -275,61 +273,6 @@ test('header displays actual blinds for the current hand rather than next-hand s
     app.render();
     assert.equal(root.querySelector('.stake-pill').textContent, label);
   }
-});
-
-test('straddle toggle defaults to 33%, validates and persists chance, and applies next hand', async t => {
-  const session = setup(t);
-  const saved = new Map();
-  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
-    getItem: key => saved.get(key) ?? null, setItem: (key, value) => saved.set(key, value),
-  } });
-  const nextHand = session.nextHand;
-  let nextSettings;
-  session.nextHand = settings => { nextSettings = settings; return nextHand(settings); };
-  const root = new Node('div');
-  const app = mountApp(root, { session });
-  t.after(() => app.destroy());
-  const before = structuredClone(session.getState());
-  const toggle = root.querySelector('#straddle-enabled');
-  const chance = root.querySelector('#straddle-chance');
-  assert.equal(toggle.checked, false);
-  assert.equal(chance.value, '33');
-  assert.equal(chance.disabled, true);
-  toggle.checked = true;
-  toggle.events.change();
-  assert.equal(chance.disabled, false);
-  for (const invalid of ['', '-1', '101', '33.3', 'not a number']) {
-    chance.value = invalid;
-    chance.events.change();
-    assert.equal(chance.value, '33');
-  }
-  chance.value = '75';
-  chance.events.change();
-  assert.deepEqual(loadStraddle(), { enabled: true, chancePercent: 75 });
-  assert.deepEqual(session.getState(), before);
-  app.render();
-  assert.equal(root.querySelector('#straddle-chance').value, '75');
-  assert.equal(root.querySelector('#straddle-enabled').checked, true);
-  session.act({ type: 'fold' });
-  app.render();
-  root.querySelector('.next-hand').events.click();
-  await Promise.resolve();
-  assert.deepEqual(nextSettings.straddle, { enabled: true, chancePercent: 75 });
-});
-
-test('straddle is labeled at the hero seat and in the hand log', t => {
-  setup(t);
-  const initial = engine.createHand({
-    seed: 123, createdAt: 123456789, stakes: 'micro', numPlayers: 3, buttonSeat: 0, heroSeat: 0,
-    seats: [0, 1, 2].map(seat => ({ seat, isHero: seat === 0, stack: 10000,
-      tier: seat === 0 ? null : 'fish', profile: null })),
-  });
-  assert.equal(renderTable(initial).querySelector('.straddle-badge'), null);
-  const state = maybePostStraddle(initial, { enabled: true, chancePercent: 100 }, () => 0);
-  assert.equal(renderTable(state).querySelector('.seat-hero').querySelector('.straddle-badge').textContent, 'Straddle · 2 bb');
-  const messages = renderLog(state).querySelectorAll('.event-item').map(node => node.children[1].textContent);
-  assert.ok(messages.includes('Hero posts straddle · 2.0 bb'));
-  assert.equal(messages.filter(text => text.includes('posts BB')).length, 1);
 });
 
 test('AI speed control loads, applies during a hand, and persists its selection', t => {

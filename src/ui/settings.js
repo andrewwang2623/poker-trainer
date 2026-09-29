@@ -2,7 +2,7 @@ import { STAKES, TIER_LABELS, TIERS } from '../shared/schemas.js';
 import { element } from './dom.js';
 import { LOOKS, TEXT_SIZES, THEMES } from './appearance.js';
 import { BOT_SPEEDS, OUT_BOT_SPEEDS, normalizeBotSpeed } from './bot-speed.js';
-import { normalizeStraddle } from './straddle.js';
+import { normalizeStraddle } from './straddle-settings.js';
 
 function percentages(pool) {
   const whole = TIERS.map(tier => Math.round((pool[tier] ?? 0) * 100));
@@ -56,14 +56,14 @@ export function renderSettings(settings, onChange, appearance, onAppearanceChang
   straddleToggle.id = 'straddle-enabled';
   straddleToggle.type = 'checkbox';
   straddleToggle.checked = straddle.enabled;
-  straddleRow.append(straddleToggle, element('span', '', 'Random UTG straddle · 2 bb'));
-  const chanceLabel = element('label', 'field-label', 'Chance when I’m UTG (%)');
+  straddleRow.append(straddleToggle, element('span', '', 'Straddles on · 2 bb'));
+  const chanceLabel = element('label', 'field-label', 'Hero straddle chance when UTG (%)');
   chanceLabel.htmlFor = 'straddle-chance';
   const chance = element('input', 'select-input');
   chance.id = chanceLabel.htmlFor;
   chance.type = 'number';
   chance.min = '0'; chance.max = '100'; chance.step = '1';
-  chance.value = String(straddle.chancePercent);
+  chance.value = String(straddle.heroChancePercent);
   chance.disabled = !straddle.enabled;
   straddleToggle.addEventListener('change', () => {
     straddle = { ...straddle, enabled: straddleToggle.checked };
@@ -73,14 +73,14 @@ export function renderSettings(settings, onChange, appearance, onAppearanceChang
   chance.addEventListener('change', () => {
     const value = Number(chance.value);
     if (!chance.value.trim() || !Number.isInteger(value) || value < 0 || value > 100) {
-      chance.value = String(straddle.chancePercent);
+      chance.value = String(straddle.heroChancePercent);
       return;
     }
-    straddle = { ...straddle, chancePercent: value };
+    straddle = { ...straddle, heroChancePercent: value };
     onChange({ ...settings, straddle });
   });
   section.append(straddleRow, chanceLabel, chance,
-    element('p', 'straddle-help', 'Applies next hand. Default: 33% of hands where you’re first after the big blind (3+ players). Posts 2 bb before action; betting starts to your left and returns to you.'));
+    element('p', 'straddle-help', 'Applies next hand at 3+ player tables. Bots straddle too, at rates based on their tier. Your default chance is 33% when first after the big blind; 0% stops your straddles but keeps bot straddles on.'));
 
   const pacingRow = element('label', 'switch-row');
   const pacingToggle = element('input', 'switch-input');

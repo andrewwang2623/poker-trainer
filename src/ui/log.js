@@ -1,12 +1,11 @@
 import { chips, element } from './dom.js';
-import { straddlePost } from './straddle.js';
 
 const ACTION_VERBS = { fold: 'folds', check: 'checks', call: 'calls', bet: 'bets', raise: 'raises to' };
 
 function description(event, state) {
   const name = event.seat === undefined ? '' : state.players[event.seat]?.name ?? `Seat ${event.seat + 1}`;
   switch (event.type) {
-    case 'postBlind': return `${name} posts ${event === straddlePost(state) ? 'straddle' : event.blind} · ${chips(event.amount)}`;
+    case 'postBlind': return `${name} posts ${event.blind} · ${chips(event.amount)}`;
     case 'dealHole': return event.seat === state.heroSeat ? `Your cards are dealt` : null;
     case 'action': {
       const size = event.action === 'raise' ? event.to : event.amount;

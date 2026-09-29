@@ -1,6 +1,5 @@
-import { seedHash } from './seed-hash.js';
 import { botActionDelay, normalizeBotSpeed } from './bot-speed.js';
-import { maybePostStraddle } from './straddle.js';
+import { normalizeStraddle } from './straddle-settings.js';
 
 const randomWord = () => globalThis.crypto.getRandomValues(new Uint32Array(1))[0];
 
@@ -14,12 +13,14 @@ export function createEngineSession(engine, bots, initialSettings = {}, options 
   const seedSource = options.seedSource ?? (() => Math.floor(sessionRng() * 0x100000000));
   const delay = options.delay ?? (ms => new Promise(resolve => setTimeout(resolve, ms)));
   const recentHands = [];
+  const reads = bots.createHeroReads?.() ?? null;
   let settings = initialSettings;
   let botSpeed = normalizeBotSpeed(initialSettings.botSpeed);
   let botPacing = initialSettings.botPacing !== false;
   let outBotSpeed = normalizeBotSpeed(initialSettings.outBotSpeed);
   let state;
   let botRng;
+  let pacingRng;
   let createdAt;
   let pending = null;
   let recorded = false;
@@ -37,24 +38,20 @@ export function createEngineSession(engine, bots, initialSettings = {}, options 
   function startHand() {
     const seed = freshSeed();
     createdAt = now();
-    const rng = engine.createRng(seed);
+    const straddle = normalizeStraddle(settings.straddle);
     const scenario = engine.createScenario({
       stakes: settings.stakes ?? 'micro', poolOverride: settings.poolOverride ?? undefined,
       seed, createdAt,
-    }, rng);
-    // The current engine drops createdAt; keep it on the config until its owner updates it.
-    scenario.createdAt = createdAt;
+      straddle: { enabled: straddle.enabled, heroChance: straddle.heroChancePercent / 100 },
+    });
+    const profileRng = engine.createRng(engine.deriveSeed(seed, 'profiles'));
     scenario.seats = scenario.seats.map(seat => ({
       ...seat,
-      profile: seat.isHero ? null : bots.createBotProfile(seat.tier, rng),
+      profile: seat.isHero ? null : bots.createBotProfile(seat.tier, profileRng),
     }));
     state = engine.createHand(scenario);
-    state = maybePostStraddle(state, settings.straddle, engine.createRng(engine.deriveSeed(seed, 'straddle')));
-    const prefix = `${createdAt.toString(36)}-`;
-    if (!new RegExp(`^${prefix}[a-f0-9]{8}$`).test(state.handId)) {
-      state = { ...state, handId: `${prefix}${seedHash(seed)}` };
-    }
     botRng = engine.createRng(engine.deriveSeed(seed, 'bots'));
+    pacingRng = engine.createRng(engine.deriveSeed(seed, 'pacing'));
     recorded = false;
     notify();
   }
@@ -63,6 +60,7 @@ export function createEngineSession(engine, bots, initialSettings = {}, options 
     if (recorded || !engine.isComplete(state)) return;
     recorded = true;
     const record = engine.buildHandRecord(state, { sessionId, timestamp: createdAt });
+    reads?.observe(record);
     if (options.coach) {
       record.coach = options.coach.analyzeHand(record, {
         rng: engine.createRng(engine.deriveSeed(state.seed, 'coach')),
@@ -80,12 +78,13 @@ export function createEngineSession(engine, bots, initialSettings = {}, options 
       while (!engine.isComplete(state) && state.actingSeat !== state.heroSeat) {
         const seat = state.actingSeat;
         if (seat === null) break;
-        // Consume the same random draw at every speed to preserve seeded decisions.
-        await delay(botActionDelay(botSpeed, botRng(), {
+        await delay(botActionDelay(botSpeed, pacingRng(), {
           folded: state.players[state.heroSeat].folded, enabled: botPacing, outSpeed: outBotSpeed,
         }));
         const view = engine.getView(state, seat);
-        const action = bots.decideAction(view, state.players[seat].profile, { rng: botRng, heroStats: null });
+        const action = bots.decideAction(view, state.players[seat].profile, {
+          rng: botRng, heroStats: reads?.summary() ?? null,
+        });
         state = engine.applyAction(state, action);
         notify();
       }
