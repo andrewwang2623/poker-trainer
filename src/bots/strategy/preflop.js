@@ -19,6 +19,7 @@ import { bountyPreflop } from './bounty.js';
 import {
   blindDefenseTarget, headsUpOpenTarget, straddleFirstInTarget, STRADDLE_RAISE_SHARE,
 } from './blinds.js';
+import { vsThreeBetTarget } from './vsThreeBet.js';
 
 /** A stack-off decision: the raise is at least this share of our chips for the street. */
 const COMMIT_SHARE = 0.35;
@@ -135,7 +136,8 @@ export function preflopDecision(view, profile, ctx, adj) {
   }
   const ip = info.raiserSeat === null ? true
     : postflopOrder(view).indexOf(view.seat) > postflopOrder(view).indexOf(info.raiserSeat);
-  const decision = blindDecision(view, profile, ctx, adj, info, ip) ?? (profile.usesCharts
+  const decision = blindDecision(view, profile, ctx, adj, info, ip) ??
+    openerVsThreeBet(view, profile, ctx, adj, info, ip) ?? (profile.usesCharts
     ? chartDecision(view, profile, ctx, adj, info, ip)
     : ruleDecision(view, profile, ctx, info, ip));
   // A live bounty hand is played as at least a medium-strength hand (SPEC §15).
@@ -240,6 +242,49 @@ function blindDecision(view, profile, ctx, adj, info, ip) {
     { type: 'raise', to: threeBetTo(view.currentBet, ip), f: threeBet[cls] ?? 0 },
     { type: 'call', f: call[cls] ?? 0 },
   ], profile.mixing, ctx.rng);
+}
+
+/**
+ * The opener facing a 3-bet (vsThreeBet.js): continue with the top `cont` of its own opening range
+ * from this position and 4-bet the top `fourBet` of it. The opening range is rebuilt the way the bot
+ * opened (heads-up target, profile-scaled chart or rule threshold, and for chart bots the narrower
+ * iso-raise range over limpers). Null for fish and for seats that didn't make the first raise.
+ */
+function openerVsThreeBet(view, profile, ctx, adj, info, ip) {
+  const { cls, position, band, spot, callers, limpers } = info;
+  if (spot !== 'threeBet' || preflopActions(view).get(view.seat)?.raiseIndex !== 1) return null;
+  const target = vsThreeBetTarget(view, profile, ip, callers);
+  if (target === null) return null;
+  const hu = view.numPlayers === 2 && position === 'SB';
+  const fourBet = { type: 'raise', to: fourBetTo(view.currentBet, ip) };
+  if (!profile.usesCharts) {
+    const style = TIER_STYLE[profile.tier] ?? TIER_STYLE.lowReg;
+    const openTop = hu ? headsUpOpenTarget(profile, adj.openWider)
+      : profile.pfr * (POSITION_WIDTH[position] ?? 1) * style.openPfrK;
+    const below = noisyBelow(profile, ctx.rng);
+    if (below(STRENGTH_PCT[cls], target.fourBet * openTop)) return fourBet;
+    const pct = variantPercentiles(profile.tier, position, band, 'open', style.chartWeight)[cls];
+    return below(pct, target.cont * openTop) ? { type: 'call' } : { type: 'fold' };
+  }
+  let open;
+  if (hu) {
+    const key = `${profile.tier}|SB|${band}|open`;
+    open = fillRange(getTierChartRange(profile.tier, 'SB', band, 'open'), null,
+      headsUpOpenTarget(profile, adj.openWider), key);
+  } else if (limpers > 0) {
+    // The iso-raise ranges of chartDecision's 'limped' branch (hero-limp widening not modelled).
+    const chart = position === 'BB'
+      ? profileChart(profile, position, band, 'threeBet', 1.5) : profileChart(profile, position, band, 'open');
+    open = position === 'BB' ? chart.range
+      : fillRange(chart.range, null, 0.6 * rangeCoverage(chart.range), `${chart.key}|iso`);
+  } else {
+    open = profileChart(profile, position, band, 'open', adj.openWider).range;
+  }
+  if (!(rangeCoverage(open) > 0)) return null;
+  const within = percentileWithinRange(open, cls);
+  if (within === null) return { type: 'fold' };
+  if (within < target.fourBet) return fourBet;
+  return within < target.cont ? { type: 'call' } : { type: 'fold' };
 }
 
 function chartDecision(view, profile, ctx, adj, info, ip) {

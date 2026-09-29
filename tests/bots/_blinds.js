@@ -1,6 +1,7 @@
 // Blind-play spots for simulation tests and tests/bots/blind-report.js: the first preflop decision of
 // the SB or BB when it's folded to them (unopened, facing an unraised straddle, or facing one open
-// with no callers), tallied as fold / call / raise by tier and opener position.
+// with no callers), and the opener's decision facing a 3-bet, tallied as fold / call / raise by tier
+// and opener position.
 import { TIERS, POSITIONS_BY_SIZE } from '../../src/shared/schemas.js';
 import { createRng, deriveSeed, createHand, applyAction, getView } from '../../src/engine/index.js';
 import { decideAction, createBotProfile } from '../../src/bots/index.js';
@@ -44,7 +45,7 @@ export function blindTallies(opts) {
   simulateBotHands({
     ...opts,
     onDecision(view, profile, action) {
-      const s = blindSpot(view);
+      const s = blindSpot(view) ?? openVsThreeBetSpot(view);
       if (!s) return;
       const byGroup = (out[s.spot] ??= {});
       const byTier = (byGroup[s.group] ??= Object.fromEntries(TIERS.map((t) => [t, { n: 0, fold: 0, call: 0, raise: 0 }])));
@@ -54,6 +55,21 @@ export function blindTallies(opts) {
     },
   });
   return out;
+}
+
+/**
+ * The opener facing a 3-bet (its only preflop action was the open; exactly two raises so far), or null.
+ * group: 'hu', or 'ip' / 'oop' for the opener's postflop position against the 3-bettor.
+ */
+export function openVsThreeBetSpot(view) {
+  if (view.street !== 'preflop') return null;
+  const acts = view.events.filter((e) => e.type === 'action' && e.street === 'preflop');
+  const raises = acts.filter((e) => e.action === 'raise' || e.action === 'bet');
+  if (raises.length !== 2 || raises[0].seat !== view.seat) return null;
+  if (acts.filter((e) => e.seat === view.seat).length !== 1) return null;
+  if (view.numPlayers === 2) return { spot: 'openVs3Bet', group: 'hu' };
+  const order = (seat) => (seat - view.buttonSeat - 1 + view.numPlayers) % view.numPlayers;
+  return { spot: 'openVs3Bet', group: order(view.seat) > order(raises[1].seat) ? 'ip' : 'oop' };
 }
 
 /** Fold / call / raise shares of one tally cell (null when empty). */
@@ -67,20 +83,25 @@ export function rates(cell) {
  * or null for nobody), let it open to the standard size (2.5 effective blinds, 3 from the SB), fold to
  * `defender` (a position label, usually 'SB' or 'BB') and tally a freshly sampled `tier` bot's decision there. Stacks are
  * uniform 20–200bb like real scenarios. With straddle, the first seat after the BB has posted one.
- * `openBlinds` overrides the open size in effective blinds.
+ * `openBlinds` overrides the open size in effective blinds. With `threeBettor` (a position label), the
+ * opener is the tier bot and opens (or not) by its own strategy; hands it doesn't open are redealt. That
+ * seat then 3-bets (3× in position, 4× out of position) and the tallied decision is the opener's
+ * (`defender` is ignored).
  * @returns {{n, fold, call, raise}} shares (n = samples)
  */
-export function spotRates({ tier, numPlayers, opener, defender, straddle = false, openBlinds, samples = 2000, seed = 1 }) {
+export function spotRates({ tier, numPlayers, opener, defender, straddle = false, openBlinds, threeBettor, samples = 2000, seed = 1 }) {
   const positions = POSITIONS_BY_SIZE[numPlayers];
   const buttonSeat = 0;
   const bbSeat = numPlayers === 2 ? 1 : 2 % numPlayers;
   const seatOf = (pos) => (bbSeat + 1 + positions.indexOf(pos)) % numPlayers;
-  const defenderSeat = seatOf(defender);
   const openerSeat = opener === null ? null : seatOf(opener);
+  const threeBettorSeat = threeBettor ? seatOf(threeBettor) : null;
+  const defenderSeat = threeBettor ? openerSeat : seatOf(defender);
+  const postflopIndex = (seat) => (seat - buttonSeat - 1 + numPlayers) % numPlayers;
   const straddleSeat = straddle ? (bbSeat + 1) % numPlayers : null;
   const heroSeat = openerSeat ?? straddleSeat ?? (defenderSeat + 1) % numPlayers;
   const tally = { n: 0, fold: 0, call: 0, raise: 0 };
-  for (let i = 0; i < samples; i++) {
+  for (let i = 0; tally.n < samples && i < samples * 100; i++) {
     const handSeed = seed * 1000003 + i;
     const rng = createRng(deriveSeed(handSeed, 'bots'));
     const profiles = Array.from({ length: numPlayers }, () => createBotProfile(tier, rng));
@@ -92,12 +113,27 @@ export function spotRates({ tier, numPlayers, opener, defender, straddle = false
       })),
     });
     const blind = straddle ? 200 : 100;
-    while (s.actingSeat !== defenderSeat) {
-      const pos = s.players[s.actingSeat].position;
-      s = applyAction(s, s.actingSeat === openerSeat
-        ? { type: 'raise', amount: Math.round((openBlinds ?? (pos === 'SB' ? 3 : 2.5)) * blind) }
-        : { type: 'fold' });
+    let opened = false;
+    let threeBet = false;
+    while (s.actingSeat !== defenderSeat || (threeBettorSeat !== null && !threeBet)) {
+      const seat = s.actingSeat;
+      const pos = s.players[seat].position;
+      let action = { type: 'fold' };
+      if (seat === openerSeat && !opened && threeBettorSeat !== null) {
+        action = decideAction(getView(s, seat), profiles[seat], { rng, heroStats: null });
+        if (action.type !== 'raise') break;
+        opened = true;
+      } else if (seat === openerSeat && !opened) {
+        action = { type: 'raise', amount: Math.round((openBlinds ?? (pos === 'SB' ? 3 : 2.5)) * blind) };
+        opened = true;
+      } else if (seat === threeBettorSeat && opened && !threeBet) {
+        const ip = postflopIndex(seat) > postflopIndex(openerSeat);
+        action = { type: 'raise', amount: Math.round(s.currentBet * (ip ? 3 : 4)) };
+        threeBet = true;
+      }
+      s = applyAction(s, action);
     }
+    if (s.actingSeat !== defenderSeat || (threeBettorSeat !== null && !threeBet)) continue;
     const action = decideAction(getView(s, defenderSeat), profiles[defenderSeat], { rng, heroStats: null });
     tally.n++;
     tally[action.type === 'check' ? 'call' : action.type === 'bet' ? 'raise' : action.type]++;

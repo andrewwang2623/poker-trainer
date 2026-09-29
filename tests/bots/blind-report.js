@@ -1,5 +1,6 @@
 // Blind-play report (not part of `node --test`; blinds.test.js runs the checks). Folded-to blind spots by
-// tier: BB and SB vs one open by opener position, SB first in, heads-up, and blinds vs an unraised straddle.
+// tier: BB and SB vs one open by opener position, SB first in, heads-up, blinds vs an unraised straddle,
+// and the opener facing a 3-bet.
 // The first table comes from spot simulations (2000 random hands per cell, standard open sizes); the rest
 // are tallied from full bot-only games (even tier mix, mid stakes).
 //
@@ -15,9 +16,13 @@ const SPOTS = [
   ['BB v BTN', 9, 'BTN', 'BB'], ['BB v SB', 6, 'SB', 'BB'], ['SB v UTG', 9, 'UTG', 'SB'], ['SB v BTN', 6, 'BTN', 'SB'],
   ['HU BB v SB', 2, 'SB', 'BB'], ['HU SB open', 2, null, 'SB'],
   ['BB v strad', 6, null, 'BB', true], ['SB v strad', 6, null, 'SB', true],
+  // The opener facing a 3-bet: [label, size, opener, null, false, 3-bettor]
+  ['UTG v BTN 3b', 9, 'UTG', null, false, 'BTN'], ['CO v BTN 3b', 6, 'CO', null, false, 'BTN'],
+  ['SB v BB 3b', 6, 'SB', null, false, 'BB'], ['UTG v BB 3b', 9, 'UTG', null, false, 'BB'],
+  ['BTN v BB 3b', 6, 'BTN', null, false, 'BB'], ['HU SB v BB 3b', 2, 'SB', null, false, 'BB'],
 ];
-const spotTable = SPOTS.map(([label, numPlayers, opener, defender, straddle]) => [label, TIERS.map((tier) =>
-  spotRates({ tier, numPlayers, opener, defender, straddle, samples: 2000, seed }))]);
+const spotTable = SPOTS.map(([label, numPlayers, opener, defender, straddle, threeBettor]) => [label, TIERS.map((tier) =>
+  spotRates({ tier, numPlayers, opener, defender, straddle, threeBettor, samples: 2000, seed }))]);
 const normal = blindTallies({ hands, seed });
 const hu = blindTallies({ hands: Math.round(hands / 4), seed, players: 2 });
 const straddled = blindTallies({ hands, seed, straddle: { enabled: true, heroChance: 1 } });
@@ -37,12 +42,12 @@ function table(title, byGroup, groups) {
 }
 
 console.log(`${hands} bot-only hands (+${Math.round(hands / 4)} heads-up, +${hands} straddled), seed ${seed}, even mix (${secs}s)`);
-console.log('\nSpot simulation   fold %  (HU SB open: play % = raise or complete; straddle rows: fold / complete / raise %)');
-console.log('spot        ' + TIERS.map((t) => TIER_LABELS[t].padEnd(18)).join(''));
+console.log('\nSpot simulation   fold %  (HU SB open: play % = raise or complete; straddle and 3-bet rows: fold / call / raise %)');
+console.log('spot          ' + TIERS.map((t) => TIER_LABELS[t].padEnd(18)).join(''));
 for (const [label, cells] of spotTable) {
   const show = (r) => label === 'HU SB open' ? pct(1 - r.fold)
-    : label.includes('strad') ? `${pct(r.fold)}/${pct(r.call)}/${pct(r.raise)}` : pct(r.fold);
-  console.log(label.padEnd(12) + cells.map((r) => show(r).padEnd(18)).join(''));
+    : label.includes('strad') || label.endsWith('3b') ? `${pct(r.fold)}/${pct(r.call)}/${pct(r.raise)}` : pct(r.fold);
+  console.log(label.padEnd(14) + cells.map((r) => show(r).padEnd(18)).join(''));
 }
 const openers = ['early', 'middle', 'late', 'SB'];
 table('BB vs one open, folded to', normal.bbVsOpen, openers);
@@ -52,3 +57,5 @@ table('Heads-up: SB first in | BB vs SB open', { all: hu.huSbFirstIn?.all, 'BB v
   ['all', 'BB vs open']);
 table('Folded to the blinds vs an unraised straddle', { BB: straddled.bbVsStraddle?.all, SB: straddled.sbVsStraddle?.all },
   ['BB', 'SB']);
+table('Opener facing a 3-bet (opener in / out of position, heads-up)', normal.openVs3Bet
+  && { ...normal.openVs3Bet, hu: hu.openVs3Bet?.hu }, ['oop', 'ip', 'hu']);

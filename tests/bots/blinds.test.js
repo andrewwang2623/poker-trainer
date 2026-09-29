@@ -108,3 +108,35 @@ test('with a straddle, chart roles shift: straddler → BB, BB → SB, SB stays 
   const plain = table(null);
   assert.deepEqual([1, 2, 3].map((seat) => chartPosition(plain, seat)), ['SB', 'BB', 'LJ']);
 });
+
+// The opener facing a 3-bet (strategy/vsThreeBet.js). The opener opens by its own strategy; the 3-bettor
+// raises 3× in position, 4× out of position. [label, table size, opener, 3-bettor, opener in position]
+const VS_THREE_BET = [
+  ['UTG v BTN', 9, 'UTG', 'BTN', false], ['HJ v CO', 9, 'HJ', 'CO', false], ['CO v BTN', 6, 'CO', 'BTN', false],
+  ['SB v BB', 6, 'SB', 'BB', false], ['UTG v BB', 9, 'UTG', 'BB', true], ['CO v BB', 6, 'CO', 'BB', true],
+  ['BTN v SB', 6, 'BTN', 'SB', true], ['BTN v BB', 6, 'BTN', 'BB', true],
+];
+
+test('openers facing a 3-bet: regs continue with about half their opening range, fish unchanged', () => {
+  const bands = { lowReg: [0.52, 0.63], midReg: [0.44, 0.56], toughReg: [0.44, 0.56] };
+  for (const tier of TIERS) {
+    const rows = VS_THREE_BET.map(([label, numPlayers, opener, threeBettor, ip]) =>
+      ({ label, ip, ...spotRates({ tier, numPlayers, opener, threeBettor, samples: SAMPLES, seed: 12 }) }));
+    const folds = rows.map((r) => r.fold);
+    if (tier === 'fish') {
+      for (const r of rows) assert.ok(r.fold < 0.4, `fish fold to 3-bet ${r.label} ${pct(r.fold)}`);
+      continue;
+    }
+    const [lo, hi] = bands[tier];
+    assert.ok(mean(folds) >= lo && mean(folds) <= hi, `${tier} mean fold to 3-bet ${pct(mean(folds))}`);
+    for (const r of rows) {
+      assert.ok(r.fold >= lo - 0.07 && r.fold <= hi + 0.07, `${tier} fold to 3-bet ${r.label} ${pct(r.fold)}`);
+      assert.ok(r.raise >= 0.06 && r.raise <= 0.16, `${tier} 4-bets ${pct(r.raise)} ${r.label}`);
+    }
+    const ipFold = mean(rows.filter((r) => r.ip).map((r) => r.fold));
+    const oopFold = mean(rows.filter((r) => !r.ip).map((r) => r.fold));
+    assert.ok(ipFold < oopFold - 0.02, `${tier} folds ${pct(ipFold)} in position vs ${pct(oopFold)} out`);
+    const hu = spotRates({ tier, numPlayers: 2, opener: 'SB', threeBettor: 'BB', samples: SAMPLES, seed: 12 });
+    assert.ok(hu.fold < oopFold && hu.fold >= lo - 0.1, `${tier} HU fold to 3-bet ${pct(hu.fold)}`);
+  }
+});
