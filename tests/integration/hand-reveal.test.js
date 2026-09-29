@@ -96,6 +96,30 @@ test('table refuses early reveal and preserves showdown cards when reveal is off
   assert.equal(renderTable(state, [], false).querySelectorAll('.card-back').length, 8);
 });
 
+test('table shows current stakes rake during play and actual rake after the hand', t => {
+  const session = setup(t);
+  const state = session.getState();
+  for (const [stakes, policy] of [
+    ['micro', 'Rake 5% · Cap 4.0 bb'], ['low', 'Rake 5% · Cap 3.0 bb'],
+    ['mid', 'Rake 4.5% · Cap 3.0 bb'], ['high', 'Rake 3.5% · Cap 0.6 bb'],
+  ]) {
+    const table = renderTable({ ...state, stakes });
+    assert.equal(table.querySelector('.rake-policy').textContent, policy);
+    assert.equal(table.querySelector('.rake-rule').textContent, 'No flop, no drop');
+    assert.equal(table.querySelector('.rake-taken'), null);
+  }
+  session.act({ type: 'fold' });
+  assert.equal(renderTable(session.getState()).querySelector('.rake-taken').textContent, 'Rake taken: 0.0 bb');
+  session.nextHand();
+  session.act({ type: 'call' });
+  assert.equal(renderTable(session.getState()).querySelector('.rake-taken'), null);
+  while (session.getState().street !== 'complete') session.act({ type: 'check' });
+  const finished = session.getState();
+  assert.ok(finished.result.rakeChips > 0);
+  assert.equal(renderTable(finished).querySelector('.rake-taken').textContent,
+    `Rake taken: ${(finished.result.rakeChips / 100).toFixed(1)} bb`);
+});
+
 test('AI speed control loads, applies during a hand, and persists its selection', t => {
   const session = setup(t);
   const saved = new Map([['felt-theory-bot-speed', 'slow']]);

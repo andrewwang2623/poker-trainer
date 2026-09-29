@@ -1,4 +1,4 @@
-import { TIER_LABELS } from '../shared/schemas.js';
+import { STAKES, TIER_LABELS } from '../shared/schemas.js';
 import { cards, chips, element } from './dom.js';
 
 const POT_LABEL = 'Pot';
@@ -36,6 +36,21 @@ export function renderTable(state, revealDelays = [], revealHands = false) {
   const pot = state.potCollected + state.players.reduce((sum, player) => sum + player.committedStreet, 0);
   const potNode = element('div', 'pot-readout');
   potNode.append(element('span', 'pot-caption', POT_LABEL), element('strong', '', chips(pot)));
+  const potSummary = element('div', 'pot-summary');
+  potSummary.append(potNode);
+  const stakes = STAKES[state.stakes];
+  if (stakes) {
+    const rake = element('div', 'rake-readout');
+    rake.setAttribute('aria-label', 'Table rake');
+    rake.append(element('span', 'rake-policy',
+      `Rake ${Number((stakes.rakePct * 100).toFixed(2))}% · Cap ${stakes.rakeCapBb.toFixed(1)} bb`));
+    if (state.street === 'complete' && Number.isFinite(state.result?.rakeChips)) {
+      rake.append(element('span', 'rake-taken', `Rake taken: ${chips(state.result.rakeChips)}`));
+    } else if (stakes.noFlopNoDrop) {
+      rake.append(element('span', 'rake-rule', 'No flop, no drop'));
+    }
+    potSummary.append(rake);
+  }
   const board = element('div', 'board-cards');
   board.setAttribute('aria-label', 'Community cards');
   const communityCards = cards(state.board);
@@ -47,7 +62,7 @@ export function renderTable(state, revealDelays = [], revealHands = false) {
   });
   board.append(communityCards);
   for (let i = state.board.length; i < 5; i++) board.append(element('span', 'card card-empty', ''));
-  center.append(street, board, potNode);
+  center.append(street, board, potSummary);
   inner.append(center);
   table.append(inner);
 
