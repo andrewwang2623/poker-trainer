@@ -36,10 +36,23 @@ export function renderControls(state, legal, onAction, onNextHand) {
   heading.querySelector('h2').id = 'action-title';
   section.append(heading);
   if (state.street === 'complete') {
-    const net = state.result?.netChips[state.heroSeat] ?? 0;
+    const bountyNet = state.result?.bountyNetChips?.[state.heroSeat] ?? 0;
+    const net = (state.result?.netChips[state.heroSeat] ?? 0) + bountyNet;
     const resultText = net === 0 ? 'Hero breaks even' : `Hero ${net > 0 ? 'wins' : 'loses'} ${chips(Math.abs(net))} net`;
     const result = element('p', `hand-result ${net >= 0 ? 'result-win' : 'result-loss'}`, resultText);
-    section.append(result, button('Next hand →', 'button button-primary next-hand', null, onNextHand));
+    section.append(result);
+    for (const [index, bounty] of (state.bounties ?? []).entries()) {
+      const payouts = state.events.filter(event => event.type === 'bounty' && event.bountyIndex === index);
+      const receivers = [...new Set(payouts.map(event => event.seat))];
+      const text = receivers.length ? receivers.map(seat => {
+        const amount = payouts.filter(event => event.seat === seat).reduce((sum, event) => sum + event.amount, 0);
+        return `${state.players[seat].name} receives ${chips(amount)}`;
+      }).join('; ') : 'unclaimed';
+      section.append(element('p', 'bounty-result', `Bounty ${bounty.type} ${bounty.target}: ${text}`));
+    }
+    if (state.bounties?.length) section.append(element('p', 'panel-note',
+      `Your bounty net: ${bountyNet >= 0 ? '+' : '−'}${chips(Math.abs(bountyNet))} · included in result and stack`));
+    section.append(button('Next hand →', 'button button-primary next-hand', null, onNextHand));
     return section;
   }
   if (!legal) {

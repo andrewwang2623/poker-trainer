@@ -16,6 +16,11 @@ function description(event, state) {
     case 'showdown': return `${name} shows ${event.cards.join(' ')} · ${event.handLabel}`;
     case 'rake': return `Rake · ${chips(event.amount)}`;
     case 'award': return `${name} wins ${chips(event.amount)}`;
+    case 'bounty': {
+      const bounty = state.bounties?.[event.bountyIndex];
+      const payer = state.players[event.fromSeat]?.name ?? `Seat ${event.fromSeat + 1}`;
+      return `${name} receives bounty ${chips(event.amount)} from ${payer}${bounty ? ` · ${bounty.type} ${bounty.target}` : ''}`;
+    }
     default: return null;
   }
 }

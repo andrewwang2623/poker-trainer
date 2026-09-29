@@ -26,6 +26,7 @@ function handBlock(record, index, count, { hideOpponentCards = false, explain, r
   const lines = [
     `--- Hand ${index} of ${count} | id ${record.id} | ${stakes.label} $${stakes.sb.toFixed(2)}/$${stakes.bb.toFixed(2)} | ${record.numPlayers}-handed | ${date(record.timestamp)} ---`,
     `Rake: ${percent(stakes.rakePct)}% cap ${bb(stakes.rakeCapBb)} | Effective stacks: hero ${bb(hero.startStackBb)}`,
+    ...(record.bounties ?? []).map(bounty => `Bounty: ${bounty.type} ${bounty.target} | ${chips(bounty.amountChips)} from each player | pays on ${bounty.paysOn === 'showdownOnly' ? 'showdown only' : 'showdown or fold'}`),
     'Players:',
   ];
   for (const p of record.players) {
@@ -73,7 +74,16 @@ function handBlock(record, index, count, { hideOpponentCards = false, explain, r
   if (shows.length) lines.push(`SHOWDOWN: ${shows.join('; ')}`);
   const winnings = record.events.filter(event => event.type === 'award' && event.seat === record.heroSeat)
     .reduce((sum, event) => sum + event.amount, 0);
-  lines.push(`RESULT: Hero wins ${chips(winnings)} (net ${signed(record.heroNetBb)}bb) | rake ${bb(record.rakeBb)}${record.result.heroAllInEv ? ` | all-in EV net ${signed(record.result.heroAllInEv.evNetChips / CHIPS_PER_BB)}bb` : ''}`);
+  const bountyResult = (record.bounties ?? []).map((bounty, index) => {
+    const transfers = record.events.filter(event => event.type === 'bounty' && event.bountyIndex === index);
+    if (!transfers.length) return ` | bounty unclaimed (${bounty.type} ${bounty.target})`;
+    const net = record.bounties.length === 1
+      ? record.heroBountyBb ?? (record.result.bountyNetChips?.[record.heroSeat] ?? 0) / CHIPS_PER_BB
+      : transfers.reduce((sum, event) => sum + (event.seat === record.heroSeat ? event.amount : 0)
+        - (event.fromSeat === record.heroSeat ? event.amount : 0), 0) / CHIPS_PER_BB;
+    return ` | bounty ${signed(net)}bb (${bounty.type} ${bounty.target})`;
+  }).join('');
+  lines.push(`RESULT: Hero wins ${chips(winnings)} (net ${signed(record.heroNetBb)}bb)${bountyResult} | rake ${bb(record.rakeBb)}${record.result.heroAllInEv ? ` | all-in EV net ${signed(record.result.heroAllInEv.evNetChips / CHIPS_PER_BB)}bb` : ''}`);
   const rabbit = rabbitCardsByHand?.get(record.id);
   if ([0, 3, 4].includes(record.board.length) && Array.isArray(rabbit) &&
       rabbit.length === 5 - record.board.length && rabbit.every(card => /^[2-9TJQKA][cdhs]$/.test(card)) &&
