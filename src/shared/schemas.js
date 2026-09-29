@@ -24,10 +24,10 @@ export const STRADDLE_RATES = Object.freeze({ fish: 0.25, lowReg: 0.10, midReg: 
 
 /** Bounties (SPEC §15). */
 export const BOUNTY_TYPES = Object.freeze(['hand', 'card']);
-export const BOUNTY_HAND_POOL = 84;          // weakest N of the 169 hand classes
+export const BOUNTY_HAND_POOL = 84;          // weakest N of the 156 non-pair hand classes
 export const BOUNTY_CARD_RANKS = Object.freeze(['2', '3', '4', '5', '6', '7']);
 export const BOUNTY_DEFAULTS = Object.freeze({
-  hand: Object.freeze({ enabled: false, chance: 0.05, amountBb: 2 }),
+  hand: Object.freeze({ enabled: false, chance: 0.25, amountBb: 2 }),
   card: Object.freeze({ enabled: false, chance: 0.05, amountBb: 2 }),
   paysOn: 'showdownOrFold',
 });

@@ -142,7 +142,7 @@ potCollected, currentBet, lastRaiseSize, actingSeat, lastAggressorSeat, preflopA
 
 | type | fields |
 |---|---|
-| postBlind | seat, blind ('SB'/'BB'), amount |
+| postBlind | seat, blind ('SB'/'BB'/'straddle'), amount |
 | dealHole | seat, cards |
 | action | seat, action, amount (chips added), to, allIn, potBefore, toCall, stackBefore |
 | board | cards (new cards only) |
@@ -150,6 +150,7 @@ potCollected, currentBet, lastRaiseSize, actingSeat, lastAggressorSeat, preflopA
 | showdown | seat, cards, handLabel |
 | rake | amount |
 | award | seat, amount, potIndex |
+| bounty | seat (receiver), fromSeat (payer), amount, bountyIndex (§15) |
 
 Event `street`: the street the event happened on. `uncalled` uses the street it happened on. `rake` and `award`
 use `'showdown'` if there was a showdown, otherwise the street the hand ended on (e.g. `'preflop'` for a walk).
@@ -543,7 +544,8 @@ From `REQUESTS-claude.md` (2026-09-28). The sections named are updated to match.
     1M deals). Every other random consumer (bots, coach, all-in EV) likewise uses its own `deriveSeed` label.
 12. **Later owner decisions (2026-09-29):** midReg uses charts without mixing (§7 table); chart bots scale the
     chart to their profile (§7); the coach's equity stream is `deriveSeed(seed, 'coach')` (§8.1); `foldToBet`
-    joins StatsSummary (§9); straddles (§14) and bounties (§15) are added. Player bounties are deferred.
+    joins StatsSummary (§9); straddles (§14) and bounties (§15) are added. Player bounties are deferred. Hand
+    bounties exclude pocket pairs and default to 25% of hands, since at 5% they paid about once per 2,900 hands.
 
 ## 14. Straddles
 
@@ -573,11 +575,12 @@ records don't change unless it's switched on. Player bounties (winning all of on
 
 - **Option:** `createScenario({…, bounty})`, `bounty = {hand: BountyTypeSetting, card: BountyTypeSetting,
   paysOn: 'showdownOrFold'|'showdownOnly'}`, `BountyTypeSetting = {enabled, chance 0–1, amountBb}`. Defaults in
-  `BOUNTY_DEFAULTS`: both disabled, chance 0.05, amountBb 2, paysOn `'showdownOrFold'`.
+  `BOUNTY_DEFAULTS`: both disabled, chance 0.25 (hand) / 0.05 (card), amountBb 2, paysOn `'showdownOrFold'`.
 - **Draw:** from `createRng(deriveSeed(seed, 'bounty'))`, always four draws in this order: hand roll, hand
   target, card roll, card target, so toggling one type never changes the other.
-  - **Hand bounty target:** uniform over the weakest `BOUNTY_HAND_POOL` (84) of the 169 classes, by the fixed
-    169-class strength ranking (the engine owns that ranking; the bots import it).
+  - **Hand bounty target:** uniform over the weakest `BOUNTY_HAND_POOL` (84) of the 156 non-pair classes
+    (pocket pairs are never bounty hands), by the fixed 169-class strength ranking (the engine owns that ranking;
+    the bots import it).
   - **Card bounty target:** uniform over the 24 cards with rank in `BOUNTY_CARD_RANKS` (2–7), e.g. `4c`.
   - The live bounties are `ScenarioConfig.bounties: Bounty[]` (hand first, then card; empty when none), carried
     into GameState, SeatView and HandRecord. They're public: shown in the UI and visible to bots before the deal.
@@ -593,6 +596,7 @@ records don't change unless it's switched on. Player bounties (winning all of on
   `heroNetBb` / `heroEvNetBb` exclude them. The tracker shows bb/100 with and without bounties (§9).
 - **Bots (first pass):** holding a live bounty hand or card: open or defend it as at least a medium-strength
   hand, bluff more postflop (only with `showdownOrFold`), and fold less on the river. Facing a player who could
-  hold it: a small call bonus rather than modelled ranges. Tier weights: fish chase bounties most, toughReg
+  hold it: a small call bonus rather than modelled ranges, only with `showdownOrFold` (with `showdownOnly`,
+  folding denies the bounty). Tier weights: fish chase bounties most, toughReg
   adjusts least (a constant in `src/bots/`, like `STRADDLE_RATES`).
 - **Export:** §10.
