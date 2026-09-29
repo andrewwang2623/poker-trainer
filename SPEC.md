@@ -87,7 +87,11 @@ The authoritative values are in `STAKES` in schemas.js.
 - `winningRanges` (per stakes, in schemas.js) are calibrated for 6-max. With random table sizes they're only
   approximate. They're used for pattern flags and the profitability model.
 
-## 4. Scenario generation (`createScenario({stakes, poolOverride?, seed, createdAt}, rng)`)
+## 4. Scenario generation (`createScenario({stakes, poolOverride?, seed, createdAt, straddle?, bounty?}, rng)`)
+
+- `straddle` and `bounty` are optional and off by default; see §14 and §15. Each draws from its own
+  `deriveSeed(seed, label)` stream and stores its result in `ScenarioConfig`, so dealt cards are identical with
+  either feature on or off, and a hand replays from `ScenarioConfig` alone.
 
 - `createdAt` (ms since epoch) is copied into `ScenarioConfig.createdAt`. main.js passes `Date.now()`. It feeds
   `handId` (§5). Pure modules never read the clock themselves, so a hand stays reproducible from its ScenarioConfig.
@@ -198,7 +202,7 @@ Redaction is the exporter's job.
 ### Engine (`src/engine/index.js`)
 ```js
 createRng(seed) → Rng
-createScenario({stakes, poolOverride?, seed, createdAt}, rng) → ScenarioConfig
+createScenario({stakes, poolOverride?, seed, createdAt, straddle?, bounty?}, rng) → ScenarioConfig
 createHand(scenario, {cards?}) → GameState      // shuffles with rng(deriveSeed(seed,'deck')), posts blinds, deals
   // optional cards = {holes?: {[seat]: Card[2]}, board?: Card[≤5]} presets hole cards and/or the first
   // board cards (tests and replays); the rest come from the seeded shuffle. main.js uses one argument.
@@ -294,7 +298,7 @@ Tier parameters are sampled uniformly per bot from these ranges:
 |---|---|---|---|---|---|---|---|---|
 | fish | .40–.65 | .05–.15 | .02–.05 | 0.6–1.2 | .05–.15 | .20–.35 | .10–.30 | no/no/no/no |
 | lowReg | .22–.30 | .16–.22 | .05–.08 | 1.8–2.8 | .15–.25 | .40–.50 | .40–.55 | no/no/no/no |
-| midReg | .20–.26 | .17–.22 | .07–.10 | 2.5–3.2 | .25–.33 | .40–.48 | .60–.75 | no/yes/yes/no |
+| midReg | .20–.26 | .17–.22 | .07–.10 | 2.5–3.2 | .25–.33 | .40–.48 | .60–.75 | yes/yes/no/no |
 | toughReg | .21–.26 | .18–.23 | .08–.12 | 2.8–3.5 | .30–.38 | .38–.45 | .85–.95 | yes/yes/yes/yes |
 
 - **Preflop without charts:** rank the 169 classes by a fixed strength list. Open or raise with the top `pfr`,
@@ -302,6 +306,11 @@ Tier parameters are sampled uniformly per bot from these ranges:
   Add noise scaled by `1 − skill`.
 - **Preflop with charts:** sample an action from the `RANGE_CHART` frequencies for (position, band, action).
   Facing a 3-bet or more: continue with the top 40% of the `threeBet` range and 4-bet the top 15% of it.
+  Each chart bot scales the chart to its own profile, keeping its shape: `open` by `pfr / 0.175`, `call` by
+  `(vpip − pfr) / 0.075` and `threeBet` by `threeBet / 0.06` (the unscaled chart's bot-only rates). Without
+  this every chart bot plays identical ranges.
+- midReg and toughReg have similar VPIP/PFR on purpose; they differ in 3-bet rate, skill, mixing and exploits.
+- **Straddles and bounties:** see §14 and §15.
 - **Postflop:** estimate equity vs a uniform range narrowed by opponents' preflop actions (300 samples).
   Bet or raise for value when equity > 0.6. Bluff with probability `bluffFreq` when equity < 0.35. Call when
   equity ≥ pot odds, blended with noise by `1 − skill`. Tune the bet/call ratio toward `aggression`.
@@ -327,7 +336,8 @@ Each opponent's range at a decision comes from its profile and preflop action:
 - Postflop: if the opponent bet or raised on the current street, drop the weakest 30% × (1 − bluffFreq) of
   the range by made-hand strength.
 
-Equity is a Monte Carlo `computeEquity` against all live opponents, 2000 samples, seeded from `handId`.
+Equity is a Monte Carlo `computeEquity` against all live opponents, 2000 samples, with
+`rng = createRng(deriveSeed(seed, 'coach'))`.
 
 ### 8.2 EV model (bb, approximate; constants live in `src/coach/ev.js`)
 - `EV(fold) = 0`
@@ -392,7 +402,10 @@ value is more than one range-width outside, otherwise `minor`.
 - Rates are occurrences / opportunities, and `null` when there are 0 opportunities.
   `vpip` and `pfr` use all hands. `wtsd` = wentToShowdown / sawFlop. `wsd` = wonAtShowdown / wentToShowdown.
   `af` = (bets + raises) / calls, and `null` if calls = 0.
-- `bbPer100 = 100·Σ heroNetBb / n`. `evAdjBbPer100` uses `heroEvNetBb` instead.
+  `foldToBet` = foldedToPostflopBet / facedPostflopBet (hands where hero faced any postflop bet or raise).
+- `bbPer100 = 100·Σ heroNetBb / n`. `evAdjBbPer100` uses `heroEvNetBb` instead. Both exclude bounties.
+  `bountyPer100 = 100·Σ heroBountyBb / n` and `bbPer100WithBounty = bbPer100 + bountyPer100` (§15). The
+  profitability estimate uses the bounty-free numbers.
   `evAdjCi95 = mean ± 1.96·sd/√n`, scaled ×100, where sd is the sample SD of per-hand `heroEvNetBb`.
 - `evLossPer100 = 100·Σ coach.totalEvLossBb / coachedHands`. `rakePer100 = 100·Σ heroRakeBb / n`.
 - `topLeaks`: hand-level flags grouped by ID, top 5 by total evLossBb.
@@ -447,7 +460,11 @@ RESULT: Hero wins 58.5bb (net +29.0bb) | rake 0.0bb {| all-in EV net +24.1bb}
 - With `hideOpponentCards: false` (the default), every opponent's `[cards]` is shown, including folded hands.
 - With `hideOpponentCards: true`, every opponent's cards print as `[?? ??]`, including SHOWDOWN lines, and hand
   labels are omitted. RESULT still prints.
-- Action verbs are `posts SB/BB`, `folds`, `checks`, `calls X`, `bets X`, `raises to X`, with `(all-in)`
+- When a bounty is live, the hand header gets one line per bounty after `Rake:`, and RESULT gets a bounty part:
+  `Bounty: hand J4o | 2.0bb from each player | pays on showdown or fold` (or `card 4c`, `pays on showdown only`),
+  `RESULT: Hero wins 12.4bb (net +8.1bb) | bounty +8.0bb (hand J4o) | rake 0.6bb`. A bounty nobody won prints
+  `| bounty unclaimed`.
+- Action verbs are `posts SB/BB`, `posts straddle X`, `folds`, `checks`, `calls X`, `bets X`, `raises to X`, with `(all-in)`
   appended when it applies. Uncalled bets print `Uncalled X returned to <pos>`.
 - `formatHands` prints the prompt once, then `--- Hand i of n …` blocks oldest-first, then `=== END ===`.
 
@@ -524,3 +541,58 @@ From `REQUESTS-claude.md` (2026-09-28). The sections named are updated to match.
     `createRng(deriveSeed(seed, 'deck'))`, not `createRng(seed)`. `createScenario` also draws from `seed`, so
     sharing a stream made the deal depend on table size (premiums were 2.06% at 9-handed vs 2.56% expected over
     1M deals). Every other random consumer (bots, coach, all-in EV) likewise uses its own `deriveSeed` label.
+12. **Later owner decisions (2026-09-29):** midReg uses charts without mixing (§7 table); chart bots scale the
+    chart to their profile (§7); the coach's equity stream is `deriveSeed(seed, 'coach')` (§8.1); `foldToBet`
+    joins StatsSummary (§9); straddles (§14) and bounties (§15) are added. Player bounties are deferred.
+
+## 14. Straddles
+
+- **Option:** `createScenario({…, straddle})`, `straddle = {enabled: boolean, heroChance: 0–1}`, default
+  `{enabled: false, heroChance: 0}`. Disabled means no one straddles.
+- **Who:** only at 3+ player tables, only the first seat after the BB (the button when 3-handed). Hero straddles
+  with `heroChance`; a bot straddles at `STRADDLE_RATES[tier]` (schemas.js). A stack ≤ `STRADDLE_BB` never
+  straddles. One draw from `createRng(deriveSeed(seed, 'straddle'))`. The result is
+  `ScenarioConfig.straddleSeat` (seat or null), carried into GameState, SeatView and HandRecord.
+- **Posting:** a live `STRADDLE_BB` (2bb) `postBlind` event with `blind: 'straddle'`, after SB and BB and before
+  hole cards. It sets `currentBet = 2bb` and `lastRaiseSize = 2bb`, so the minimum raise is to 4bb.
+- **Action:** preflop starts left of the straddler, who keeps a check/raise option like the BB. Postflop order,
+  rake, side pots and the uncalled-bet return are unchanged. In a walk the straddler gets its uncalled 1bb back
+  and there's no rake (no flop, no drop where it applies).
+- **Records:** the straddle is a forced post: never VPIP, PFR, a 3-bet opportunity or a hero decision.
+  `heroPosition` keeps the seat's normal label (e.g. `UTG`). `HeroStatFlags.straddled` / `facedStraddle`.
+- **Bots:** preflop the straddle is the effective big blind: opens are 2.5 (SB 3) effective blinds plus 1 per
+  limper, 3-bets are 3×/4× the current bet, depth bands are read in effective blinds, and the straddler uses the
+  BB chart row for its option.
+- **Export:** `posts straddle 2.0bb`.
+
+## 15. Bounties
+
+Optional side prizes that make weak hands worth playing. Every type is off by default, so behaviour and existing
+records don't change unless it's switched on. Player bounties (winning all of one seat's chips) are deferred;
+`Bounty.type` leaves room for `'player'` later.
+
+- **Option:** `createScenario({…, bounty})`, `bounty = {hand: BountyTypeSetting, card: BountyTypeSetting,
+  paysOn: 'showdownOrFold'|'showdownOnly'}`, `BountyTypeSetting = {enabled, chance 0–1, amountBb}`. Defaults in
+  `BOUNTY_DEFAULTS`: both disabled, chance 0.05, amountBb 2, paysOn `'showdownOrFold'`.
+- **Draw:** from `createRng(deriveSeed(seed, 'bounty'))`, always four draws in this order: hand roll, hand
+  target, card roll, card target, so toggling one type never changes the other.
+  - **Hand bounty target:** uniform over the weakest `BOUNTY_HAND_POOL` (84) of the 169 classes, by the fixed
+    169-class strength ranking (the engine owns that ranking; the bots import it).
+  - **Card bounty target:** uniform over the 24 cards with rank in `BOUNTY_CARD_RANKS` (2–7), e.g. `4c`.
+  - The live bounties are `ScenarioConfig.bounties: Bounty[]` (hand first, then card; empty when none), carried
+    into GameState, SeatView and HandRecord. They're public: shown in the UI and visible to bots before the deal.
+- **Qualifying:** a seat qualifies for a bounty when it wins at least a share of the main pot (`pots[0]`) and
+  its hole cards match: its hand class equals the target (hand bounty), or the target card is one of its two hole
+  cards, not the board (card bounty). With `paysOn: 'showdownOnly'` it must also have been a showdown.
+- **Payment:** settled after the pot is awarded, hand bounty first. Every seat dealt in that doesn't qualify pays
+  `min(amountChips, its remaining stack)`. The chips are split equally among the qualifying seats (odd chips per
+  §13 item 2). One `bounty` event per payer→receiver transfer. Bounties are never raked and don't change `pots`,
+  `rakeChips` or `netChips`. `HandResult.bountyNetChips[seat]` holds each seat's bounty net (sums to 0), so a
+  seat's final stack = start + `netChips` + `bountyNetChips`. An unclaimed bounty pays nothing.
+- **Records and stats:** `HandRecord.heroBountyBb`. Bounties never count toward VPIP/PFR or any other stat, and
+  `heroNetBb` / `heroEvNetBb` exclude them. The tracker shows bb/100 with and without bounties (§9).
+- **Bots (first pass):** holding a live bounty hand or card: open or defend it as at least a medium-strength
+  hand, bluff more postflop (only with `showdownOrFold`), and fold less on the river. Facing a player who could
+  hold it: a small call bonus rather than modelled ranges. Tier weights: fish chase bounties most, toughReg
+  adjusts least (a constant in `src/bots/`, like `STRADDLE_RATES`).
+- **Export:** §10.

@@ -18,6 +18,20 @@ export const SUITS = Object.freeze(['c', 'd', 'h', 's']);
 export const STREETS = Object.freeze(['preflop', 'flop', 'turn', 'river']);
 export const ACTION_TYPES = Object.freeze(['fold', 'check', 'call', 'bet', 'raise']);
 export const TIERS = Object.freeze(['fish', 'lowReg', 'midReg', 'toughReg']);
+/** Straddle (SPEC §14): live UTG straddle size, and each bot tier's chance of straddling when UTG. */
+export const STRADDLE_BB = 2;
+export const STRADDLE_RATES = Object.freeze({ fish: 0.25, lowReg: 0.10, midReg: 0.05, toughReg: 0.03 });
+
+/** Bounties (SPEC §15). */
+export const BOUNTY_TYPES = Object.freeze(['hand', 'card']);
+export const BOUNTY_HAND_POOL = 84;          // weakest N of the 169 hand classes
+export const BOUNTY_CARD_RANKS = Object.freeze(['2', '3', '4', '5', '6', '7']);
+export const BOUNTY_DEFAULTS = Object.freeze({
+  hand: Object.freeze({ enabled: false, chance: 0.05, amountBb: 2 }),
+  card: Object.freeze({ enabled: false, chance: 0.05, amountBb: 2 }),
+  paysOn: 'showdownOrFold',
+});
+
 export const TIER_LABELS = Object.freeze({
   fish: 'Fish', lowReg: 'Low-stakes reg', midReg: 'Mid-stakes reg', toughReg: 'Tough reg',
 });
@@ -181,6 +195,7 @@ export const PROFITABILITY_DISCLAIMER =
  * @property {number} rakeChips
  * @property {number[]} netChips        Net per seat (index = seat), after rake.
  * @property {number[]} showdownSeats   Seats that showed cards.
+ * @property {number[]} bountyNetChips  Bounty net per seat (index = seat), sums to 0; not in netChips (§15).
  * @property {AllInEv|null} heroAllInEv  Set only when betting closed for the rest of the hand with board
  *   cards to come and hero not folded. Folded players' cards count as unknown.
  */
@@ -206,6 +221,8 @@ export const PROFITABILITY_DISCLAIMER =
  * @property {number|null} actingSeat  null when no action is pending.
  * @property {number|null} lastAggressorSeat  Last bettor/raiser on the current street.
  * @property {number|null} preflopAggressorSeat
+ * @property {number|null} straddleSeat  §14.
+ * @property {Bounty[]} bounties      Live bounties, public (§15).
  * @property {HandEvent[]} events
  * @property {HandResult|null} result  Set when street === 'complete'.
  */
@@ -215,7 +232,7 @@ export const PROFITABILITY_DISCLAIMER =
  * `street` is the street the event happened on; 'rake' and 'award' use 'showdown' if there was a
  * showdown, otherwise the street the hand ended on.
  * type-specific fields:
- *  - 'postBlind': seat, blind ('SB'|'BB'), amount
+ *  - 'postBlind': seat, blind ('SB'|'BB'|'straddle'), amount
  *  - 'dealHole':  seat, cards
  *  - 'action':    seat, action (ActionType), amount (chips added), to (committedStreet after),
  *                 allIn, potBefore (pot incl. all current bets), toCall, stackBefore
@@ -224,12 +241,13 @@ export const PROFITABILITY_DISCLAIMER =
  *  - 'showdown':  seat, cards, handLabel (e.g. "Two Pair, Aces and Sevens")
  *  - 'rake':      amount
  *  - 'award':     seat, amount, potIndex
+ *  - 'bounty':    seat (receiver), fromSeat (payer), amount, bountyIndex (into bounties); street as 'award'
  * @typedef {Object} HandEvent
  * @property {number} seq
- * @property {'postBlind'|'dealHole'|'action'|'board'|'uncalled'|'showdown'|'rake'|'award'} type
+ * @property {'postBlind'|'dealHole'|'action'|'board'|'uncalled'|'showdown'|'rake'|'award'|'bounty'} type
  * @property {Street|'showdown'} street
  * @property {number} [seat]
- * @property {'SB'|'BB'} [blind]
+ * @property {'SB'|'BB'|'straddle'} [blind]
  * @property {Card[]} [cards]
  * @property {ActionType} [action]
  * @property {number} [amount]
@@ -240,6 +258,17 @@ export const PROFITABILITY_DISCLAIMER =
  * @property {number} [stackBefore]
  * @property {string} [handLabel]
  * @property {number} [potIndex]
+ * @property {number} [fromSeat]
+ * @property {number} [bountyIndex]
+ */
+
+/**
+ * A live bounty (SPEC §15). `target` is a HandClass for 'hand', a Card for 'card'.
+ * @typedef {Object} Bounty
+ * @property {'hand'|'card'} type
+ * @property {HandClass|Card} target
+ * @property {number} amountChips     Paid by each non-qualifying seat dealt in, capped at its stack.
+ * @property {'showdownOrFold'|'showdownOnly'} paysOn
  */
 
 /**
@@ -260,6 +289,8 @@ export const PROFITABILITY_DISCLAIMER =
  * @property {number} buttonSeat
  * @property {number} heroSeat
  * @property {SeatConfig[]} seats
+ * @property {number|null} straddleSeat  §14; null when no straddle.
+ * @property {Bounty[]} bounties       §15; [] when none.
  */
 
 /**
@@ -288,6 +319,8 @@ export const PROFITABILITY_DISCLAIMER =
  * @property {LegalActions|null} legal null when this seat isn't to act.
  * @property {PlayerState[]} players   holeCards [] for every other seat (until showdown events).
  * @property {number|null} preflopAggressorSeat
+ * @property {number|null} straddleSeat
+ * @property {Bounty[]} bounties
  * @property {HandEvent[]} events      'dealHole' events of other seats removed.
  * @property {HandResult|null} result
  */
@@ -309,7 +342,7 @@ export const PROFITABILITY_DISCLAIMER =
  * @property {number} bluffFreq     0..1 share of bets/raises made without showdown value
  * @property {number} foldToBet     0..1 baseline fold rate vs a ~2/3-pot bet
  * @property {number} skill         0..1 how closely decisions track equity/charts (noise = 1-skill)
- * @property {boolean} usesCharts   Preflop from RangeChart (toughReg)
+ * @property {boolean} usesCharts   Preflop from RangeChart (midReg, toughReg)
  * @property {boolean} textureSizing
  * @property {boolean} mixing       Randomized frequency mixing
  * @property {boolean} exploitsHero Adjusts to BotContext.heroStats
@@ -410,6 +443,10 @@ export const PROFITABILITY_DISCLAIMER =
  * @property {boolean} sawFlop
  * @property {boolean} wentToShowdown
  * @property {boolean} wonAtShowdown
+ * @property {boolean} facedPostflopBet     Faced any postflop bet or raise.
+ * @property {boolean} foldedToPostflopBet  Folded to one.
+ * @property {boolean} straddled            Hero posted a straddle (§14).
+ * @property {boolean} facedStraddle        Another seat straddled.
  * @property {number} postflopBets
  * @property {number} postflopRaises
  * @property {number} postflopCalls
@@ -439,11 +476,14 @@ export const PROFITABILITY_DISCLAIMER =
  * @property {Position} heroPosition
  * @property {number} buttonSeat
  * @property {HandRecordPlayer[]} players
+ * @property {number|null} straddleSeat
+ * @property {Bounty[]} bounties
  * @property {Card[]} board
  * @property {HandEvent[]} events      Full, unredacted.
  * @property {HandResult} result
  * @property {number} heroNetBb
- * @property {number} heroEvNetBb      All-in EV adjusted; equals heroNetBb when no all-in.
+ * @property {number} heroEvNetBb      All-in EV adjusted; equals heroNetBb when no all-in. Excludes bounties.
+ * @property {number} heroBountyBb     Hero's bounty net (§15); 0 when none.
  * @property {number} rakeBb           Total rake taken from the hand.
  * @property {number} heroRakeBb       Rake attributed to hero (proportional to hero's winnings).
  * @property {HeroStatFlags} statFlags
@@ -472,11 +512,14 @@ export const PROFITABILITY_DISCLAIMER =
  * @property {number|null} threeBet
  * @property {number|null} cbet
  * @property {number|null} foldToCbet
+ * @property {number|null} foldToBet     Folds to any postflop bet or raise (§9).
  * @property {number|null} wtsd
  * @property {number|null} wsd
  * @property {number|null} af
- * @property {{vpip: number, threeBet: number, cbet: number, foldToCbet: number, wtsd: number, wsd: number}} opportunities
- * @property {number} bbPer100
+ * @property {{vpip: number, threeBet: number, cbet: number, foldToCbet: number, foldToBet: number, wtsd: number, wsd: number}} opportunities
+ * @property {number} bbPer100         Excludes bounties.
+ * @property {number} bountyPer100
+ * @property {number} bbPer100WithBounty
  * @property {number} evAdjBbPer100
  * @property {[number, number]} evAdjCi95
  * @property {number} evLossPer100     0 when no hand in the window has coach data.
