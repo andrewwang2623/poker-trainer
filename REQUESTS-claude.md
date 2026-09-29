@@ -151,3 +151,27 @@ should rely on them; if any is wrong, tell me and I'll change the engine.
 defaults from `BOUNTY_DEFAULTS` rather than hard-coding them. Hand-bounty targets no longer include pocket
 pairs (SPEC owner FYI 1 above is resolved). Bots only add the call bonus against a possible holder under
 "showdown or fold".
+
+## 2026-09-29 — Blind defense by price and position (bots; SPEC owner FYI)
+
+Simulation found reg blinds folding ~75–80% to any single open (vs UTG and vs SB alike), chart regs folding
+100% in the BB to an unraised straddle, and heads-up the button opening ~58% with the BB folding ~78%.
+Fixed in `src/bots/strategy/blinds.js` + `preflop.js`; checked by `tests/bots/blinds.test.js`, report
+`node tests/bots/blind-report.js`.
+
+**For the SPEC owner (please update §7 / §12 / §14 if you agree):**
+1. **§7 blind defense.** Reg blinds (lowReg, midReg, toughReg; fish unchanged) no longer use the single
+   `vpip` threshold when folded to them facing one raise. They continue with a target share set by the
+   opener's position and the price (pot odds vs a standard 2.5bb / SB 3bb open, trimmed per caller):
+   toughReg BB folds ~55% vs UTG, ~37% vs CO/BTN, ~30% vs SB; midReg ×0.95 and lowReg ×0.9 of its
+   defense. Chart bots keep the chart's shape (3-bet chart as before, calls fill from the call chart
+   outward); lowReg fills from its variant ordering. The SB defends ~12% vs UTG to ~29% vs BTN.
+2. **§7 heads-up.** The button opens ~82–87% (regs) and the BB defends ~70–75% vs its open. 3–9 handed
+   opens are unchanged.
+3. **§14 straddle roles.** With a straddle live, the straddler uses the BB row (as now), the **BB uses the
+   SB row** (it had no 'open' row as the BB), and the SB keeps its row. Folded to a blind facing only the
+   straddle, regs play ~60–72% (BB) / ~53–60% (SB), raising the top ~45% of that and completing the rest.
+4. **§12 VPIP convergence.** Blind defense lifts reg VPIP ~5–6pp over the profile target (10k bot-only
+   hands, even mix: lowReg 30 vs 26, midReg 29 vs 23, toughReg 30 vs 23). The tier test now allows VPIP up
+   to +8pp over target (PFR and 3-bet stay ±5pp). Either raise the §7 reg VPIP ranges (~+5pp) or accept
+   the looser bound; I haven't forced VPIP back down elsewhere.
