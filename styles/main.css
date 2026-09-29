@@ -105,6 +105,19 @@ button:disabled, input:disabled { cursor: not-allowed; opacity: .55; }
 .card-red { color: #bf4042; }
 .card-empty { border-color: #e8ead96b; background: #ffffff11; box-shadow: none; }
 .card-back { border: 2px solid #e4d5a2; background: repeating-linear-gradient(45deg, #244c59, #244c59 5px, #316373 5px, #316373 10px); color: #eedeb4; font-size: calc(15px * var(--text-scale)); }
+.board-cards .card-revealing {
+  transform-origin: center bottom;
+  animation-name: community-card-reveal;
+  animation-timing-function: cubic-bezier(.2, .75, .25, 1);
+  animation-fill-mode: both;
+}
+@keyframes community-card-reveal {
+  from { opacity: 0; transform: translateY(-12px) scale(.92) rotateY(75deg); }
+  to { opacity: 1; transform: translateY(0) scale(1) rotateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .board-cards .card-revealing { animation: none; }
+}
 .pot-readout { display: flex; align-items: baseline; gap: 9px; padding: 8px 15px; border: 1px solid #e8dcaf50; border-radius: 999px; background: #102c25b3; }
 .pot-caption { color: #c3ceba; font-size: calc(11px * var(--text-scale)); letter-spacing: .1em; text-transform: uppercase; }
 .pot-readout strong { color: #ffe3a3; font-size: calc(16px * var(--text-scale)); }

@@ -3,7 +3,29 @@ import { cards, chips, element } from './dom.js';
 
 const POT_LABEL = 'Pot';
 
-export function renderTable(state) {
+const REVEAL_DURATION = 360;
+const REVEAL_STAGGER = 160;
+
+/** Track reveal times across whole-table redraws so betting updates don't replay the deal. */
+export function createBoardReveal(now = () => performance.now()) {
+  let handId;
+  let starts = [];
+  return state => {
+    const time = now();
+    if (state.handId !== handId) {
+      handId = state.handId;
+      starts = [];
+    }
+    starts.length = Math.min(starts.length, state.board.length);
+    const firstNew = starts.length;
+    for (let index = firstNew; index < state.board.length; index++) {
+      starts.push(time + (index - firstNew) * REVEAL_STAGGER);
+    }
+    return starts.map(start => time - start < REVEAL_DURATION ? start - time : null);
+  };
+}
+
+export function renderTable(state, revealDelays = []) {
   const section = element('section', 'table-wrap');
   section.setAttribute('aria-label', 'Poker table');
   const table = element('div', 'felt-table');
@@ -15,7 +37,14 @@ export function renderTable(state) {
   potNode.append(element('span', 'pot-caption', POT_LABEL), element('strong', '', chips(pot)));
   const board = element('div', 'board-cards');
   board.setAttribute('aria-label', 'Community cards');
-  board.append(cards(state.board));
+  const communityCards = cards(state.board);
+  Array.from(communityCards.children).forEach((card, index) => {
+    if (revealDelays[index] == null) return;
+    card.classList.add('card-revealing');
+    card.style.animationDelay = `${revealDelays[index]}ms`;
+    card.style.animationDuration = `${REVEAL_DURATION}ms`;
+  });
+  board.append(communityCards);
   for (let i = state.board.length; i < 5; i++) board.append(element('span', 'card card-empty', ''));
   center.append(street, board, potNode);
   inner.append(center);

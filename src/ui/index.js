@@ -2,7 +2,7 @@ import { createActionTimer, loadTimer, saveTimer } from './action-timer.js';
 import { STAKES } from '../shared/schemas.js';
 import { createMockSession } from './mock.js';
 import { element } from './dom.js';
-import { renderTable } from './table.js';
+import { createBoardReveal, renderTable } from './table.js';
 import { renderControls } from './controls.js';
 import { renderLog } from './log.js';
 import { renderSettings } from './settings.js';
@@ -15,6 +15,7 @@ export function mountApp(rootEl, app = {}) {
   let appearance = loadAppearance();
   applyAppearance(appearance);
   const session = app.session ?? createMockSession(settings);
+  const boardReveal = createBoardReveal();
   const exportPanel = app.features?.export && app.exporter ? createExportPanel(app, session) : null;
   let timerSettings = loadTimer();
   let timerNode = null;
@@ -53,7 +54,7 @@ export function mountApp(rootEl, app = {}) {
     intro.append(element('div', '', 'Practice table'), element('span', '', `${state.numPlayers} players · No-Limit Hold’em${state.handId.startsWith('mock-') ? ' · Sample hand' : ''}`));
     const layout = element('main', 'game-layout');
     const left = element('div', 'game-column');
-    left.append(renderTable(state));
+    left.append(renderTable(state, boardReveal(state)));
     const controls = renderControls(state, legal, handleAction, handleNextHand);
     if (busy) controls.querySelectorAll('button, input').forEach(node => { node.disabled = true; });
     timerNode = element('span', 'action-timer');
