@@ -161,6 +161,7 @@ button:disabled, input:disabled { cursor: not-allowed; opacity: .55; }
 .panel-heading h2, .panel h2 { margin: 0; font-family: Georgia, serif; font-size: calc(20px * var(--text-scale)); font-weight: 600; letter-spacing: -.025em; }
 .panel-note, .hand-id { overflow: hidden; color: var(--muted); font-size: calc(11px * var(--text-scale)); text-overflow: ellipsis; white-space: nowrap; }
 .controls { padding: 23px; }
+.controls .new-hand { order: 1; margin-left: auto; flex-shrink: 0; }
 .basic-actions { display: flex; gap: 10px; }
 .button { min-height: 44px; padding: 10px 17px; border: 1px solid transparent; border-radius: 9px; font-size: calc(13px * var(--text-scale)); font-weight: 800; transition: background .18s, transform .18s, border-color .18s; }
 .button:not(:disabled):hover { transform: translateY(-1px); }
