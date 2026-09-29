@@ -120,6 +120,22 @@ test('table shows current stakes rake during play and actual rake after the hand
     `Rake taken: ${(finished.result.rakeChips / 100).toFixed(1)} bb`);
 });
 
+test('header displays actual blinds for the current hand rather than next-hand settings', t => {
+  const session = setup(t);
+  const root = new Node('div');
+  const app = mountApp(root, { session, settings: { stakes: 'high' } });
+  t.after(() => app.destroy());
+  assert.equal(root.querySelector('.stake-pill').textContent, 'Micro (NL5) · $0.02/$0.05');
+  for (const [stakes, label] of [
+    ['low', 'Low (NL25) · $0.10/$0.25'], ['mid', 'Mid (NL100) · $0.50/$1.00'],
+    ['high', 'High (NL500) · $2.50/$5.00'],
+  ]) {
+    session.nextHand({ stakes });
+    app.render();
+    assert.equal(root.querySelector('.stake-pill').textContent, label);
+  }
+});
+
 test('AI speed control loads, applies during a hand, and persists its selection', t => {
   const session = setup(t);
   const saved = new Map([['felt-theory-bot-speed', 'slow']]);

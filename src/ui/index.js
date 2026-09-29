@@ -54,7 +54,9 @@ export function mountApp(rootEl, app = {}) {
     const title = element('div', 'brand');
     title.append(element('span', 'brand-mark', '♠'), element('span', '', 'Felt Theory'));
     const meta = element('div', 'masthead-meta');
-    meta.append(element('span', 'stake-pill', STAKES[state.stakes]?.label ?? state.stakes));
+    const stakes = STAKES[state.stakes];
+    meta.append(element('span', 'stake-pill', stakes
+      ? `${stakes.label} · $${stakes.sb.toFixed(2)}/$${stakes.bb.toFixed(2)}` : state.stakes));
     const dashboardLink = element('a', 'dashboard-link', 'Dashboard ↗');
     dashboardLink.href = '#dashboard';
     dashboardLink.hidden = !app.features?.dashboard;
