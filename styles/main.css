@@ -124,6 +124,8 @@ button:disabled, input:disabled { cursor: not-allowed; opacity: .55; }
 .pot-summary { display: grid; justify-items: center; gap: 5px; }
 .rake-readout { display: grid; gap: 2px; color: #d0d9ce; font-size: calc(10px * var(--text-scale)); line-height: 1.3; text-align: center; }
 .rake-taken { color: #ffe3a3; }
+.board-cards .rabbit-card { outline: 2px dashed #e3b9ff; outline-offset: 2px; opacity: .85; }
+.rabbit-note { max-width: 220px; color: #e3b9ff; font-size: calc(10px * var(--text-scale)); text-align: center; }
 .seat {
   position: absolute; z-index: 2; width: 148px; padding: 8px 9px 6px;
   border: 1px solid #829c8f88; border-radius: 12px; background: var(--seat-bg);
@@ -178,7 +180,7 @@ button:disabled, input:disabled { cursor: not-allowed; opacity: .55; }
 .result-win { color: #a7dbb3; }
 .result-loss { color: #efbdac; }
 .next-hand { width: 100%; }
-.reveal-hands { width: 100%; margin-top: 10px; }
+.reveal-hands, .rabbit-hunt { width: 100%; margin-top: 10px; }
 .waiting-copy { color: var(--muted); }
 .error-message { margin: 0; padding: 12px; border: 1px solid #dc8e7d; border-radius: 8px; color: #ffd5ca; }
 

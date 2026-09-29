@@ -25,7 +25,13 @@ export function createBoardReveal(now = () => performance.now()) {
   };
 }
 
-export function renderTable(state, revealDelays = [], revealHands = false) {
+export function canRabbitHunt(state) {
+  return state.street === 'complete' && state.board.length < 5 &&
+    Array.isArray(state.deck) && state.deck.length >= 5 - state.board.length;
+}
+
+export function renderTable(state, revealDelays = [], revealHands = false, rabbitHunt = false) {
+  const showRabbit = rabbitHunt && canRabbitHunt(state);
   const revealAll = revealHands && state.street === 'complete';
   const section = element('section', 'table-wrap');
   section.setAttribute('aria-label', 'Poker table');
@@ -53,15 +59,28 @@ export function renderTable(state, revealDelays = [], revealHands = false) {
   }
   const board = element('div', 'board-cards');
   board.setAttribute('aria-label', 'Community cards');
-  const communityCards = cards(state.board);
+  // The engine deals from the front of the deck without burns. Read a copy only:
+  // rabbit cards must never enter the real board, events, results, or exports.
+  const displayBoard = showRabbit ? [...state.board, ...state.deck.slice(0, 5 - state.board.length)] : state.board;
+  const communityCards = cards(displayBoard);
   Array.from(communityCards.children).forEach((card, index) => {
+    if (index >= state.board.length) {
+      card.classList.add('rabbit-card');
+      card.setAttribute('title', 'Rabbit card — not dealt in this hand');
+    }
     if (revealDelays[index] == null) return;
     card.classList.add('card-revealing');
     card.style.animationDelay = `${revealDelays[index]}ms`;
     card.style.animationDuration = `${REVEAL_DURATION}ms`;
   });
   board.append(communityCards);
-  for (let i = state.board.length; i < 5; i++) board.append(element('span', 'card card-empty', ''));
+  for (let i = displayBoard.length; i < 5; i++) board.append(element('span', 'card card-empty', ''));
+  if (showRabbit) {
+    const note = element('span', 'rabbit-note', 'Rabbit hunt · outlined cards were not dealt');
+    note.id = 'rabbit-note';
+    board.setAttribute('aria-describedby', note.id);
+    potSummary.append(note);
+  }
   center.append(street, board, potSummary);
   inner.append(center);
   table.append(inner);

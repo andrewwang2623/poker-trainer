@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mountApp } from '../../src/ui/index.js';
-import { renderTable } from '../../src/ui/table.js';
+import { canRabbitHunt, renderTable } from '../../src/ui/table.js';
+import * as engine from '../../src/engine/index.js';
 import { createMockSession } from '../../src/ui/mock.js';
 import { loadBotPacing, loadBotSpeed, loadOutBotSpeed } from '../../src/ui/bot-speed.js';
 
@@ -94,6 +95,74 @@ test('table refuses early reveal and preserves showdown cards when reveal is off
   assert.equal(renderTable(state).querySelectorAll('.card-back').length, 8);
   assert.equal(renderTable(state, [], true).querySelectorAll('.card-back').length, 0);
   assert.equal(renderTable(state, [], false).querySelectorAll('.card-back').length, 8);
+});
+
+test('rabbit hunt is post-hand only, toggles independently of hole cards, and resets next hand', async t => {
+  const session = setup(t);
+  const root = new Node('div');
+  const app = mountApp(root, { session });
+  t.after(() => app.destroy());
+  assert.equal(root.querySelector('.rabbit-hunt'), null);
+  assert.equal(renderTable(session.getState(), [], false, true).querySelector('.rabbit-card'), null);
+  session.act({ type: 'fold' });
+  app.render();
+  const before = structuredClone(session.getState());
+  root.querySelector('.rabbit-hunt').events.click();
+  assert.equal(root.querySelectorAll('.rabbit-card').length, 5);
+  assert.equal(root.querySelector('.rabbit-hunt').attributes['aria-pressed'], 'true');
+  assert.equal(root.querySelector('.rabbit-hunt').focused, true);
+  assert.equal(root.querySelectorAll('.card-back').length, 10);
+  assert.match(root.querySelector('.rabbit-note').textContent, /not dealt/);
+  root.querySelector('.reveal-hands').events.click();
+  assert.equal(root.querySelectorAll('.rabbit-card').length, 5);
+  assert.equal(root.querySelectorAll('.card-back').length, 0);
+  assert.deepEqual(session.getState(), before);
+  root.querySelector('.rabbit-hunt').events.click();
+  assert.equal(root.querySelectorAll('.rabbit-card').length, 0);
+  root.querySelector('.rabbit-hunt').events.click();
+  const staleRabbit = root.querySelector('.rabbit-hunt');
+  root.querySelector('.next-hand').events.click();
+  await Promise.resolve();
+  staleRabbit.events.click();
+  assert.equal(root.querySelector('.rabbit-hunt'), null);
+  assert.equal(root.querySelectorAll('.rabbit-card').length, 0);
+  session.act({ type: 'fold' });
+  app.render();
+  assert.equal(root.querySelector('.rabbit-hunt').attributes['aria-pressed'], 'false');
+});
+
+test('rabbit cards match the engine runout after preflop, flop, and turn folds without changing records', t => {
+  setup(t);
+  const scenario = {
+    seed: 123, createdAt: 123456789, stakes: 'micro', numPlayers: 2, buttonSeat: 0, heroSeat: 0,
+    seats: [0, 1].map(seat => ({ seat, isHero: seat === 0, stack: 10000,
+      tier: seat === 0 ? null : 'fish', profile: null })),
+  };
+  const continueHand = state => engine.applyAction(state,
+    { type: engine.getLegalActions(state).types.includes('check') ? 'check' : 'call' });
+  for (const street of ['preflop', 'flop', 'turn', 'river']) {
+    let state = engine.createHand(scenario);
+    while (state.street !== street) state = continueHand(state);
+    if (!engine.getLegalActions(state).types.includes('fold')) {
+      state = engine.applyAction(state, { type: 'bet', amount: engine.getLegalActions(state).minTo });
+    }
+    const ended = engine.applyAction(state, { type: 'fold' });
+    const before = structuredClone(ended);
+    const meta = { sessionId: 'rabbit-test', timestamp: 123456789 };
+    const record = engine.buildHandRecord(ended, meta);
+    let runout = state;
+    while (!engine.isComplete(runout)) runout = continueHand(runout);
+    const table = renderTable(ended, [], false, true);
+    const boardCards = table.querySelector('.board-cards').querySelectorAll('.card');
+    assert.deepEqual(boardCards.map(card => card.textContent),
+      runout.board.map(code => `${code[0]}${{ c: '♣', d: '♦', h: '♥', s: '♠' }[code[1]]}`));
+    assert.equal(table.querySelectorAll('.rabbit-card').length, 5 - ended.board.length);
+    assert.equal(canRabbitHunt(ended), street !== 'river');
+    assert.deepEqual(ended, before);
+    assert.deepEqual(engine.buildHandRecord(ended, meta), record);
+    assert.equal(canRabbitHunt({ ...ended, deck: undefined }), false);
+    assert.equal(canRabbitHunt({ ...ended, deck: [] }), false);
+  }
 });
 
 test('check badges show hero and AI checks, replace later actions, and reset across hands', t => {

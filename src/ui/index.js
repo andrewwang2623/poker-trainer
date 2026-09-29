@@ -2,7 +2,7 @@ import { createActionTimer, loadTimer, saveTimer } from './action-timer.js';
 import { STAKES } from '../shared/schemas.js';
 import { createMockSession } from './mock.js';
 import { element } from './dom.js';
-import { createBoardReveal, renderTable } from './table.js';
+import { canRabbitHunt, createBoardReveal, renderTable } from './table.js';
 import { renderControls } from './controls.js';
 import { renderLog } from './log.js';
 import { renderSettings } from './settings.js';
@@ -42,12 +42,15 @@ export function mountApp(rootEl, app = {}) {
   let busy = false;
   let error = '';
   let revealedHandId = null;
+  let rabbitHandId = null;
 
   function render() {
     if (destroyed) return;
     const state = session.getState();
     if (state.handId !== revealedHandId || state.street !== 'complete') revealedHandId = null;
     const revealHands = revealedHandId === state.handId;
+    if (rabbitHandId !== state.handId || !canRabbitHunt(state)) rabbitHandId = null;
+    const rabbitHunt = rabbitHandId === state.handId;
     const legal = session.getLegalActions();
     const shell = element('div', 'app-shell');
     const masthead = element('header', 'masthead');
@@ -66,7 +69,7 @@ export function mountApp(rootEl, app = {}) {
     intro.append(element('div', '', 'Practice table'), element('span', '', `${state.numPlayers} players · No-Limit Hold’em${state.handId.startsWith('mock-') ? ' · Sample hand' : ''}`));
     const layout = element('main', 'game-layout');
     const left = element('div', 'game-column');
-    left.append(renderTable(state, boardReveal(state), revealHands));
+    left.append(renderTable(state, boardReveal(state), revealHands, rabbitHunt));
     const controls = renderControls(state, legal, handleAction, handleNextHand);
     if (state.street === 'complete') {
       const reveal = element('button', 'button button-secondary reveal-hands',
@@ -80,6 +83,20 @@ export function mountApp(rootEl, app = {}) {
         rootEl.querySelector('.reveal-hands')?.focus();
       });
       controls.append(reveal);
+      if (canRabbitHunt(state)) {
+        const rabbit = element('button', 'button button-secondary rabbit-hunt',
+          rabbitHunt ? 'Hide rabbit cards' : 'Rabbit hunt · reveal remaining board');
+        rabbit.type = 'button';
+        rabbit.setAttribute('aria-pressed', String(rabbitHunt));
+        rabbit.addEventListener('click', () => {
+          const current = session.getState();
+          if (busy || current.handId !== state.handId || !canRabbitHunt(current)) return;
+          rabbitHandId = rabbitHunt ? null : state.handId;
+          render();
+          rootEl.querySelector('.rabbit-hunt')?.focus();
+        });
+        controls.append(rabbit);
+      }
     }
     if (busy) controls.querySelectorAll('button, input').forEach(node => { node.disabled = true; });
     timerNode = element('span', 'action-timer');
