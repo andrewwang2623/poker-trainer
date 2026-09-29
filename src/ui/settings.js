@@ -49,7 +49,13 @@ export function renderSettings(settings, onChange, appearance, onAppearanceChang
   stakeSelect.addEventListener('change', () => onChange({ ...settings, stakes: stakeSelect.value }));
   section.append(stakeLabel, stakeSelect);
 
-  const speedLabel = element('label', 'field-label', 'AI action speed');
+  const pacingRow = element('label', 'switch-row');
+  const pacingToggle = element('input', 'switch-input');
+  pacingToggle.id = 'bot-pacing';
+  pacingToggle.type = 'checkbox';
+  pacingToggle.checked = settings.botPacing !== false;
+  pacingRow.append(pacingToggle, element('span', '', 'Pause AI actions while I’m in the hand'));
+  const speedLabel = element('label', 'field-label', 'AI speed while I’m in the hand');
   speedLabel.htmlFor = 'bot-speed';
   const speedSelect = element('select', 'select-input');
   speedSelect.id = speedLabel.htmlFor;
@@ -59,12 +65,18 @@ export function renderSettings(settings, onChange, appearance, onAppearanceChang
     speedSelect.append(option);
   }
   speedSelect.value = normalizeBotSpeed(settings.botSpeed);
+  speedSelect.disabled = !pacingToggle.checked;
+  pacingToggle.addEventListener('change', () => {
+    speedSelect.disabled = !pacingToggle.checked;
+    onChange({ ...settings, botPacing: pacingToggle.checked });
+  });
   speedSelect.addEventListener('change', () => onChange({ ...settings, botSpeed: speedSelect.value }));
-  section.append(speedLabel, speedSelect,
-    element('p', 'panel-note', 'Time before each AI action. Applies from the next action; a wait already in progress finishes first.'));
+  section.append(pacingRow, speedLabel, speedSelect,
+    element('p', 'panel-note', 'Off: instant AI actions while you’re in. After you fold: 1 second per AI action, regardless of this setting. All-in still counts as in the hand. Changes apply after the current wait.'));
 
   const timerRow = element('label', 'switch-row');
   const timerToggle = element('input', 'switch-input');
+  timerToggle.id = 'action-timer-enabled';
   timerToggle.type = 'checkbox';
   timerToggle.checked = timerSettings.enabled;
   timerRow.append(timerToggle, element('span', '', 'Player action timer'));

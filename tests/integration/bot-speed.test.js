@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as engine from '../../src/engine/index.js';
 import * as placeholder from '../../src/bots/placeholder.js';
 import { createEngineSession } from '../../src/ui/session.js';
-import { BOT_SPEEDS, botActionDelay, loadBotSpeed, normalizeBotSpeed, saveBotSpeed } from '../../src/ui/bot-speed.js';
+import { BOT_SPEEDS, botActionDelay, loadBotPacing, loadBotSpeed, normalizeBotSpeed, saveBotPacing, saveBotSpeed } from '../../src/ui/bot-speed.js';
 
 const fixedEngine = {
   ...engine,
@@ -82,4 +82,49 @@ test('changing playback speed preserves cards and the seeded bot decision stream
     if (!baseline) baseline = result;
     else assert.deepEqual(result, baseline);
   }
+});
+
+test('folded hero always gets one-second actions, even with pacing off or instant selected', async () => {
+  for (const speed of ['instant', 'study']) {
+    const waits = [];
+    const bots = { ...placeholder, decideAction(view, profile, context) {
+      if (view.street === 'preflop' && view.seat === 0 && view.legal.types.includes('raise')) {
+        return { type: 'raise', amount: view.legal.minTo };
+      }
+      return placeholder.decideAction(view, profile, context);
+    } };
+    const session = sessionAt(speed, async ms => { waits.push(ms); }, bots);
+    session.setBotPacing(false);
+    await session.ready;
+    assert.ok(waits.length > 0);
+    assert.ok(waits.every(ms => ms === 0));
+    const beforeFold = waits.length;
+    await session.act({ type: 'fold' });
+    assert.equal(session.getState().players[2].folded, true);
+    assert.ok(waits.length > beforeFold);
+    assert.ok(waits.slice(beforeFold).every(ms => ms === 1000));
+    const beforeNext = waits.length;
+    session.setBotPacing(true);
+    await session.nextHand({ stakes: 'micro' });
+    assert.ok(waits.length > beforeNext);
+    assert.ok(waits.slice(beforeNext).every(ms => speed === 'instant' ? ms === 0 : ms >= 2000));
+  }
+});
+
+test('pacing preference persists and folded timing overrides every preset and toggle', () => {
+  for (const { id } of BOT_SPEEDS) {
+    for (const enabled of [true, false]) {
+      assert.equal(botActionDelay(id, 0.5, { folded: true, enabled }), 1000);
+    }
+    assert.equal(botActionDelay(id, 0.5, { folded: false, enabled: false }), 0);
+  }
+  const saved = new Map();
+  const storage = { getItem: key => saved.get(key), setItem: (key, value) => saved.set(key, value) };
+  assert.equal(loadBotPacing(storage), true);
+  saveBotPacing(false, storage);
+  assert.equal(loadBotPacing(storage), false);
+  saveBotPacing(true, storage);
+  assert.equal(loadBotPacing(storage), true);
+  assert.equal(loadBotPacing({ getItem() { throw Error('blocked'); } }), true);
+  assert.doesNotThrow(() => saveBotPacing(false, { setItem() { throw Error('blocked'); } }));
 });

@@ -133,7 +133,7 @@ function fixture(t, { enabled = true, types = ['check', 'bet'] } = {}) {
   };
   const app = mountApp(root, { session });
   t.after(() => app.destroy());
-  const toggle = () => root.querySelectorAll('input').find(node => node.type === 'checkbox');
+  const toggle = () => root.querySelector('#action-timer-enabled');
   return { time, root, state, actions, app, saved, toggle };
 }
 

@@ -1,4 +1,5 @@
 const STORAGE_KEY = 'felt-theory-bot-speed';
+const PACING_KEY = 'felt-theory-bot-pacing';
 
 export const BOT_SPEEDS = Object.freeze([
   { id: 'instant', label: 'Instant', multiplier: 0 },
@@ -12,9 +13,21 @@ export function normalizeBotSpeed(value) {
   return BOT_SPEEDS.some(speed => speed.id === value) ? value : 'normal';
 }
 
-export function botActionDelay(speed, random) {
+export function botActionDelay(speed, random, { folded = false, enabled = true } = {}) {
+  if (folded) return 1000;
+  if (!enabled) return 0;
   const multiplier = BOT_SPEEDS.find(option => option.id === normalizeBotSpeed(speed)).multiplier;
   return Math.round((400 + Math.floor(random * 501)) * multiplier);
+}
+
+export function loadBotPacing(storage) {
+  try { return (storage ?? globalThis.localStorage)?.getItem(PACING_KEY) !== 'false'; }
+  catch { return true; }
+}
+
+export function saveBotPacing(enabled, storage) {
+  try { (storage ?? globalThis.localStorage)?.setItem(PACING_KEY, String(enabled !== false)); }
+  catch { /* Pacing remains usable without storage. */ }
 }
 
 export function loadBotSpeed(storage) {

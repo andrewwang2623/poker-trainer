@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mountApp } from '../../src/ui/index.js';
 import { renderTable } from '../../src/ui/table.js';
 import { createMockSession } from '../../src/ui/mock.js';
-import { loadBotSpeed } from '../../src/ui/bot-speed.js';
+import { loadBotPacing, loadBotSpeed } from '../../src/ui/bot-speed.js';
 
 class Node {
   constructor(tag) {
@@ -103,7 +103,9 @@ test('AI speed control loads, applies during a hand, and persists its selection'
     getItem: key => saved.get(key) ?? null, setItem: (key, value) => saved.set(key, value),
   } });
   const speeds = [];
+  const pacing = [];
   session.setBotSpeed = value => speeds.push(value);
+  session.setBotPacing = value => pacing.push(value);
   const root = new Node('div');
   const app = mountApp(root, { session });
   t.after(() => app.destroy());
@@ -117,4 +119,19 @@ test('AI speed control loads, applies during a hand, and persists its selection'
   assert.equal(loadBotSpeed(), 'study');
   app.render();
   assert.equal(root.querySelector('#bot-speed').value, 'study');
+  const toggle = root.querySelector('#bot-pacing');
+  assert.equal(toggle.checked, true);
+  toggle.checked = false;
+  toggle.events.change();
+  assert.equal(root.querySelector('#bot-speed').disabled, true);
+  assert.equal(loadBotPacing(), false);
+  assert.deepEqual(pacing, [true, false]);
+  app.render();
+  assert.equal(root.querySelector('#bot-pacing').checked, false);
+  assert.equal(root.querySelector('#bot-speed').value, 'study');
+  const enabledToggle = root.querySelector('#bot-pacing');
+  enabledToggle.checked = true;
+  enabledToggle.events.change();
+  assert.equal(root.querySelector('#bot-speed').disabled, false);
+  assert.equal(loadBotPacing(), true);
 });
