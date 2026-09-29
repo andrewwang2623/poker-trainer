@@ -146,3 +146,8 @@ should rely on them; if any is wrong, tell me and I'll change the engine.
    `K3o` alongside the usual junk. The weakest 84 is exactly what §15 says; flagging it only in case the
    intent was "weak-looking" hands.
 2. §5's HandEvent table doesn't list `'bounty'` or `blind: 'straddle'` yet (schemas.js does).
+
+**Update (after 0daab8f):** the hand-bounty frequency default is now **25%** (card stays 5%); take the settings
+defaults from `BOUNTY_DEFAULTS` rather than hard-coding them. Hand-bounty targets no longer include pocket
+pairs (SPEC owner FYI 1 above is resolved). Bots only add the call bonus against a possible holder under
+"showdown or fold".
