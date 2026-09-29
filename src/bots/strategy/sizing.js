@@ -22,9 +22,12 @@ export function betFraction(profile, { texture, street, polar }, rng) {
   return between(texturePct(texture), rng);
 }
 
-/** Preflop open or iso-raise "to" in chips: 2.5bb (3bb from the SB), +1bb per limper. */
-export function openTo(position, limpers) {
-  return Math.round(((position === 'SB' ? 3 : 2.5) + limpers) * CHIPS_PER_BB);
+/**
+ * Preflop open or iso-raise "to" in chips: 2.5 blinds (3 from the SB), +1 per limper, where a
+ * blind is `unit` chips (the current bet: 1bb, or 2bb over a straddle).
+ */
+export function openTo(position, limpers, unit = CHIPS_PER_BB) {
+  return Math.round(((position === 'SB' ? 3 : 2.5) + limpers) * unit);
 }
 
 /** 3-bet "to": 3× the open in position, 4× out of position. */

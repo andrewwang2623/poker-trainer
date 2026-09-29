@@ -8,8 +8,10 @@ import {
   rangeCoverage,
 } from './handRank.js';
 import {
-  depthBand, effectiveStackBb, liveOpponents, postflopOrder, preflopActions, preflopSpot,
+  chartPosition, depthBand, effectiveBlind, effectiveStackBb, liveOpponents, postflopOrder, preflopActions,
+  preflopSpot,
 } from './situation.js';
+import { CHIPS_PER_BB } from '../../shared/schemas.js';
 import { opponentRanges } from './ranges.js';
 import { openTo, threeBetTo, fourBetTo } from './sizing.js';
 import { TIER_STYLE, POSITION_WIDTH, PREFLOP_NOISE, POSTFLOP_NOISE } from './style.js';
@@ -92,8 +94,11 @@ export function preflopDecision(view, profile, ctx, adj) {
   const me = view.players[view.seat];
   const info = {
     cls: handClass(view.holeCards),
-    position: view.position,
-    band: depthBand(effectiveStackBb(view)),
+    // A straddle is the effective big blind: depth is read in straddles and the straddler
+    // defends like the BB. The straddle itself is a post, never a raise (preflopSpot).
+    position: chartPosition(view),
+    blind: effectiveBlind(view),
+    band: depthBand((effectiveStackBb(view) * CHIPS_PER_BB) / effectiveBlind(view)),
     ...preflopSpot(view),
   };
   if (legal.toCall > 0 &&
@@ -127,11 +132,12 @@ function chartDecision(view, profile, ctx, adj, info, ip) {
   const heroLimped = preflopActions(view).get(view.heroSeat)?.limped === true;
   switch (spot) {
     case 'unopened':
-      return choose([{ type: 'raise', to: openTo(position, 0), f: chart('open', adj.openWider)[cls] ?? 0 }],
+      const open = chart('open', adj.openWider);
+      return choose([{ type: 'raise', to: openTo(position, 0, info.blind), f: open[cls] ?? 0 }],
         profile.mixing, ctx.rng);
     case 'limped': {
       const isoWider = heroLimped ? adj.isoWider : 1;
-      const to = openTo(position, limpers);
+      const to = openTo(position, limpers, info.blind);
       if (position === 'BB') {
         const iso = chart('threeBet', 1.5 * isoWider);
         return choose([{ type: 'raise', to, f: iso[cls] ?? 0 }], profile.mixing, ctx.rng);
@@ -174,7 +180,7 @@ function ruleDecision(view, profile, ctx, info, ip) {
     case 'unopened':
     case 'limped': {
       const pct = variantPercentiles(profile.tier, position, band, 'open', style.chartWeight)[cls];
-      if (below(pct, profile.pfr * width * style.openPfrK)) return { type: 'raise', to: openTo(position, limpers) };
+      if (below(pct, profile.pfr * width * style.openPfrK)) return { type: 'raise', to: openTo(position, limpers, info.blind) };
       if (below(pct, profile.vpip * width * style.openVpipK)) return { type: 'call' };
       return { type: 'fold' };
     }

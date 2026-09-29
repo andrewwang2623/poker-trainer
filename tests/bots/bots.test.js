@@ -288,3 +288,76 @@ test('createHeroReads summarizes hero hands, including fold-to-bet', () => {
   assert.equal(sum.foldToBet, folds / facing);
   assert.equal(sum.opportunities.foldToBet, facing);
 });
+
+test('bots act legally in straddled pots', () => {
+  let straddles = 0;
+  let decisions = 0;
+  for (let seed = 1; seed <= 1500; seed++) {
+    const rng = createRng(seed);
+    const scenario = createScenario({
+      stakes: 'micro', seed, createdAt: seed, straddle: { enabled: true, heroChance: 1 },
+      poolOverride: { fish: 1, lowReg: 1, midReg: 1, toughReg: 1 },
+    }, rng);
+    if (scenario.straddleSeat === null) continue;
+    straddles++;
+    const botRng = createRng(deriveSeed(seed, 'bots'));
+    for (const seat of scenario.seats) if (!seat.isHero) seat.profile = createBotProfile(seat.tier, botRng);
+    let s = createHand(scenario);
+    while (!isComplete(s)) {
+      const seat = s.actingSeat;
+      const legal = getLegalActions(s);
+      let action;
+      if (seat === s.heroSeat) {
+        const type = legal.types[Math.floor(rng() * legal.types.length)];
+        action = type === 'raise' || type === 'bet'
+          ? { type, amount: legal.minTo + Math.floor(rng() * (legal.maxTo - legal.minTo + 1)) } : { type };
+      } else {
+        action = decideAction(getView(s, seat), s.players[seat].profile, { rng: botRng, heroStats: EXPLOITABLE_HERO });
+        assert.ok(legal.types.includes(action.type), `seed ${seed}: ${action.type} not in ${legal.types}`);
+        if (action.amount !== undefined) assert.ok(action.amount >= legal.minTo && action.amount <= legal.maxTo);
+        decisions++;
+      }
+      s = applyAction(s, action);
+    }
+    assert.equal(s.result.netChips.reduce((a, b) => a + b, 0) + s.result.rakeChips, 0);
+  }
+  assert.ok(straddles > 200, `${straddles} straddled hands`);
+  assert.ok(decisions > 2000, `${decisions} decisions`);
+
+  // Bot-only: the straddle isn't a voluntary action, so it never shows up as VPIP/PFR.
+  const stats = simulateBotHands({ hands: 1500, seed: 3, straddle: { enabled: true, heroChance: 0.5 } });
+  for (const tier of TIERS) assert.ok(stats[tier].vpip < stats[tier].target.vpip + 0.07, tier);
+});
+
+test('bots treat the straddle as the big blind: sizes scale from it and it is not a raise', () => {
+  const reg = midProfile('midReg');
+  // 5-handed, button 0: SB 1, BB 2, straddle 3 (hero); seat 4 acts first.
+  const seats = [reg, reg, reg, null, reg].map((profile) => ({ profile, stackBb: 100 }));
+  const base = (holes) => {
+    const scenario = {
+      seed: 1, createdAt: 1, stakes: 'mid', numPlayers: 5, buttonSeat: 0, heroSeat: 3, straddleSeat: 3,
+      seats: seats.map((s, seat) => ({ seat, isHero: seat === 3, stack: 10000, tier: s.profile?.tier ?? null, profile: s.profile })),
+    };
+    return createHand(scenario, { cards: { holes } });
+  };
+  const act = (s, seat) => decideAction(getView(s, seat), reg, { rng: createRng(1), heroStats: null });
+
+  let s = base({ 4: ['As', 'Ad'], 0: ['Ks', 'Kd'] });
+  assert.deepEqual(act(s, 4), { type: 'raise', amount: 500 }, 'open 2.5 straddles');
+  s = applyAction(s, { type: 'call' }); // seat 4 limps the straddle
+  assert.deepEqual(act(s, 0), { type: 'raise', amount: 700 }, 'iso 2.5 straddles + 1 per limper');
+
+  s = base({ 4: ['Qs', 'Qd'], 0: ['As', 'Ad'] });
+  s = applyAction(s, { type: 'raise', amount: 500 });
+  assert.deepEqual(act(s, 0), { type: 'raise', amount: 1500 }, '3-bet 3× in position');
+
+  // Everyone limps: the straddler has the option and checks trash rather than folding.
+  const straddler = midProfile('toughReg');
+  s = base({ 3: ['7c', '2d'] });
+  for (const seat of [4, 0, 1, 2]) s = applyAction(s, { type: 'call' });
+  assert.equal(s.actingSeat, 3);
+  for (let i = 0; i < 20; i++) {
+    const a = decideAction(getView(s, 3), straddler, { rng: createRng(i), heroStats: null });
+    assert.equal(a.type, 'check');
+  }
+});

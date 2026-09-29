@@ -2,6 +2,20 @@
 // who did what, and position. Pure; never looks at hidden cards.
 import { CHIPS_PER_BB } from '../../shared/schemas.js';
 
+/**
+ * The effective big blind in chips preflop: the straddle when one was posted, else 1bb.
+ * Bots size opens and read stack depth in these units.
+ */
+export function effectiveBlind(view) {
+  const straddle = view.events.find((e) => e.type === 'postBlind' && e.blind === 'straddle');
+  return Math.max(CHIPS_PER_BB, straddle?.amount ?? 0);
+}
+
+/** Position for charts: the straddler plays its option like the big blind. */
+export function chartPosition(view) {
+  return view.straddleSeat != null && view.straddleSeat === view.seat ? 'BB' : view.position;
+}
+
 export function depthBand(effBb) {
   if (effBb <= 40) return 'short';
   if (effBb <= 100) return 'mid';

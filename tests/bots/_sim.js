@@ -62,17 +62,19 @@ function foldedPreflop(state, seat) {
 }
 
 /**
- * @param {{hands?: number, seed?: number, stakes?: string, pool?: Object}} opts  pool defaults to
- *   an even mix of all four tiers so every tier gets a sample; pass stakes to use its default pool.
+ * @param {{hands?: number, seed?: number, stakes?: string, pool?: Object, straddle?: Object}} opts
+ *   pool defaults to an even mix of all four tiers so every tier gets a sample; pass stakes to use its
+ *   default pool. straddle is passed to createScenario.
  * @returns {Object<string, Object>} per tier: observed rates and mean profile targets
  */
-export function simulateBotHands({ hands = 1000, seed = 1, stakes, pool } = {}) {
+export function simulateBotHands({ hands = 1000, seed = 1, stakes, pool, straddle } = {}) {
   const tierPool = pool ? normalizePool(pool) : stakes ? poolForStakes(stakes) : UNIFORM_POOL;
   const session = createRng(seed);
   const tallies = Object.fromEntries(TIERS.map((t) => [t, emptyTally()]));
   for (let h = 0; h < hands; h++) {
     const handSeed = Math.floor(session() * 4294967296);
-    const scenario = createScenario({ stakes: stakes ?? 'mid', seed: handSeed, createdAt: h }, createRng(handSeed));
+    const scenario = createScenario({ stakes: stakes ?? 'mid', seed: handSeed, createdAt: h, straddle },
+      createRng(handSeed));
     const botRng = createRng(deriveSeed(handSeed, 'bots'));
     const profiles = scenario.seats.map(() => createBotProfile(sampleTier(tierPool, botRng), botRng));
     for (const seat of scenario.seats) seat.profile = seat.isHero ? null : profiles[seat.seat];
