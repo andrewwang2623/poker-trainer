@@ -1,5 +1,6 @@
 import { botActionDelay, normalizeBotSpeed } from './bot-speed.js';
 import { normalizeStraddle } from './straddle-settings.js';
+import { normalizeBounty } from './bounty-settings.js';
 
 const randomWord = () => globalThis.crypto.getRandomValues(new Uint32Array(1))[0];
 
@@ -43,6 +44,7 @@ export function createEngineSession(engine, bots, initialSettings = {}, options 
       stakes: settings.stakes ?? 'micro', poolOverride: settings.poolOverride ?? undefined,
       seed, createdAt,
       straddle: { enabled: straddle.enabled, heroChance: straddle.heroChancePercent / 100 },
+      bounty: normalizeBounty(settings.bounty),
     });
     const profileRng = engine.createRng(engine.deriveSeed(seed, 'profiles'));
     scenario.seats = scenario.seats.map(seat => ({

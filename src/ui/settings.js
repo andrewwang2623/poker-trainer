@@ -3,6 +3,7 @@ import { element } from './dom.js';
 import { LOOKS, TEXT_SIZES, THEMES } from './appearance.js';
 import { BOT_SPEEDS, OUT_BOT_SPEEDS, normalizeBotSpeed } from './bot-speed.js';
 import { normalizeStraddle } from './straddle-settings.js';
+import { renderBountySettings } from './bounty-settings.js';
 
 function percentages(pool) {
   const whole = TIERS.map(tier => Math.round((pool[tier] ?? 0) * 100));
@@ -81,6 +82,8 @@ export function renderSettings(settings, onChange, appearance, onAppearanceChang
   });
   section.append(straddleRow, chanceLabel, chance,
     element('p', 'straddle-help', 'Applies next hand at 3+ player tables. Bots straddle too, at rates based on their tier. Your default chance is 33% when first after the big blind; 0% stops your straddles but keeps bot straddles on.'));
+
+  section.append(renderBountySettings(settings.bounty, bounty => onChange({ ...settings, bounty })));
 
   const pacingRow = element('label', 'switch-row');
   const pacingToggle = element('input', 'switch-input');

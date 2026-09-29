@@ -44,6 +44,12 @@ export function renderTable(state, revealDelays = [], revealHands = false, rabbi
   potNode.append(element('span', 'pot-caption', POT_LABEL), element('strong', '', chips(pot)));
   const potSummary = element('div', 'pot-summary');
   potSummary.append(potNode);
+  for (const bounty of state.bounties ?? []) {
+    const node = element('div', 'bounty-readout');
+    node.append(element('strong', '', `Bounty: ${bounty.target} · ${chips(bounty.amountChips)} from each player`),
+      element('span', '', `Pays on ${bounty.paysOn === 'showdownOnly' ? 'showdown only' : 'showdown or fold'}`));
+    potSummary.append(node);
+  }
   const stakes = STAKES[state.stakes];
   if (stakes) {
     const rake = element('div', 'rake-readout');
