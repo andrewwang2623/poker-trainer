@@ -15,5 +15,10 @@ export const HAND_STRENGTH_ORDER = Object.freeze((
   '64o 93o 62s 42s 92o 32s 73o 83o 53o 63o 82o 43o 52o 62o 72o 42o 32o'
 ).split(' '));
 
-/** The weakest BOUNTY_HAND_POOL classes, strongest of them first: the hand-bounty targets. */
-export const BOUNTY_HAND_TARGETS = Object.freeze(HAND_STRENGTH_ORDER.slice(-BOUNTY_HAND_POOL));
+/**
+ * The hand-bounty targets: the weakest BOUNTY_HAND_POOL of the 156 non-pair classes (pocket pairs
+ * are never bounty hands), strongest of them first.
+ */
+export const BOUNTY_HAND_TARGETS = Object.freeze(
+  HAND_STRENGTH_ORDER.filter((cls) => cls[0] !== cls[1]).slice(-BOUNTY_HAND_POOL),
+);

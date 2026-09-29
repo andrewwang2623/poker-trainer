@@ -14,15 +14,20 @@ const both = (chance, amountBb = 2, paysOn) => ({
   hand: { enabled: true, chance, amountBb }, card: { enabled: true, chance, amountBb }, ...(paysOn ? { paysOn } : {}),
 });
 
-test('the 169-class ranking lives in the engine; bounty pools are its weakest 84 classes and the 2–7 cards', () => {
+test('the 169-class ranking lives in the engine; bounty pools are its weakest 84 non-pairs and the 2–7 cards', () => {
   assert.equal(HAND_STRENGTH_ORDER.length, 169);
   assert.equal(new Set(HAND_STRENGTH_ORDER).size, 169);
   assert.equal(HAND_STRENGTH_ORDER[0], 'AA');
   assert.equal(HAND_STRENGTH_ORDER[168], '32o');
   assert.equal(BOUNTY_HAND_TARGETS.length, BOUNTY_HAND_POOL);
-  assert.deepEqual([...BOUNTY_HAND_TARGETS], HAND_STRENGTH_ORDER.slice(169 - BOUNTY_HAND_POOL));
-  assert.ok(!BOUNTY_HAND_TARGETS.includes('A2o') && !BOUNTY_HAND_TARGETS.includes('98s'));
-  assert.ok(BOUNTY_HAND_TARGETS.includes('72o') && BOUNTY_HAND_TARGETS.includes('J5s'));
+  const nonPairs = HAND_STRENGTH_ORDER.filter((c) => c[0] !== c[1]);
+  assert.equal(nonPairs.length, 156);
+  assert.deepEqual([...BOUNTY_HAND_TARGETS], nonPairs.slice(156 - BOUNTY_HAND_POOL));
+  assert.ok(BOUNTY_HAND_TARGETS.every((c) => c.length === 3 && c[0] !== c[1]), 'pocket pairs are never bounty hands');
+  assert.ok(!BOUNTY_HAND_TARGETS.includes('22') && !BOUNTY_HAND_TARGETS.includes('A2o'));
+  // 22 was in the weakest 84 of all 169 classes; excluding pairs moves the next non-pair (97s) in.
+  assert.ok(HAND_STRENGTH_ORDER.slice(169 - BOUNTY_HAND_POOL).includes('22'));
+  assert.ok(BOUNTY_HAND_TARGETS.includes('97s') && BOUNTY_HAND_TARGETS.includes('72o'));
   assert.equal(BOUNTY_CARD_TARGETS.length, 24);
   assert.ok(BOUNTY_CARD_TARGETS.every((c) => BOUNTY_CARD_RANKS.includes(c[0])));
 });
@@ -79,10 +84,17 @@ test('frequencies match the chance per type; targets come only from the allowed 
     for (const n of seen.values()) assert.ok(Math.abs(n - expected) < 0.35 * expected, `${n} vs ${expected}`);
   }
 
-  // The default 5% chance through createScenario.
-  let live = 0;
-  for (let seed = 1; seed <= 8000; seed++) live += scenarioFor(seed, { hand: { enabled: true } }).bounties.length;
-  assert.ok(Math.abs(live / 8000 - 0.05) < 0.008, `default chance ${live / 8000}`);
+  // The default chances through createScenario: 25% for hand bounties, 5% for card bounties.
+  assert.equal(BOUNTY_DEFAULTS.hand.chance, 0.25);
+  assert.equal(BOUNTY_DEFAULTS.card.chance, 0.05);
+  let handLive = 0;
+  let cardLive = 0;
+  for (let seed = 1; seed <= 8000; seed++) {
+    handLive += scenarioFor(seed, { hand: { enabled: true } }).bounties.length;
+    cardLive += scenarioFor(seed, { card: { enabled: true } }).bounties.length;
+  }
+  assert.ok(Math.abs(handLive / 8000 - 0.25) < 0.015, `default hand chance ${handLive / 8000}`);
+  assert.ok(Math.abs(cardLive / 8000 - 0.05) < 0.008, `default card chance ${cardLive / 8000}`);
 });
 
 test('the draw uses its own stream, four draws, so toggling one type never changes the other', () => {

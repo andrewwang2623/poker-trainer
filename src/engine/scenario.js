@@ -154,8 +154,8 @@ export function normalizeBountyOption(bounty) {
 /**
  * Draw the live bounties (SPEC §15) from createRng(deriveSeed(seed, 'bounty')): always four draws,
  * hand roll, hand target, card roll, card target, so no other stream shifts and toggling one type
- * never changes the other. Hand targets are uniform over the weakest BOUNTY_HAND_POOL classes, card
- * targets over the 24 cards ranked 2–7.
+ * never changes the other. Hand targets are uniform over the weakest BOUNTY_HAND_POOL non-pair
+ * classes, card targets over the 24 cards ranked 2–7.
  * @param {number} seed
  * @param {Object} [bounty] the createScenario option
  * @returns {import('../shared/schemas.js').Bounty[]} hand first, then card; [] when none
