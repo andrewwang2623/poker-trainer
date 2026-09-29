@@ -25,7 +25,8 @@ export function createBoardReveal(now = () => performance.now()) {
   };
 }
 
-export function renderTable(state, revealDelays = []) {
+export function renderTable(state, revealDelays = [], revealHands = false) {
+  const revealAll = revealHands && state.street === 'complete';
   const section = element('section', 'table-wrap');
   section.setAttribute('aria-label', 'Poker table');
   const table = element('div', 'felt-table');
@@ -57,6 +58,7 @@ export function renderTable(state, revealDelays = []) {
     const x = 50 + Math.cos(angle) * 42;
     const y = 50 + Math.sin(angle) * 40;
     const seat = element('div', `seat ${player.isHero ? 'seat-hero' : ''} ${player.folded ? 'seat-folded' : ''} ${state.actingSeat === player.seat ? 'seat-acting' : ''}`);
+    if (revealAll) seat.classList.add('seat-revealed');
     seat.style.left = `${x}%`;
     seat.style.top = `${y}%`;
     seat.setAttribute('aria-label', `${player.name}, ${player.position}, ${chips(player.stack)} remaining`);
@@ -71,7 +73,7 @@ export function renderTable(state, revealDelays = []) {
     const top = element('div', 'seat-top');
     top.append(avatar, details);
     seat.append(top);
-    const visibleCards = player.isHero || shown.has(player.seat);
+    const visibleCards = player.isHero || shown.has(player.seat) || revealAll;
     const hole = cards(visibleCards ? player.holeCards : ['??', '??'], !visibleCards);
     hole.classList.add('hole-cards');
     seat.append(hole);

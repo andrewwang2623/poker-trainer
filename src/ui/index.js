@@ -34,10 +34,13 @@ export function mountApp(rootEl, app = {}) {
   });
   let busy = false;
   let error = '';
+  let revealedHandId = null;
 
   function render() {
     if (destroyed) return;
     const state = session.getState();
+    if (state.handId !== revealedHandId || state.street !== 'complete') revealedHandId = null;
+    const revealHands = revealedHandId === state.handId;
     const legal = session.getLegalActions();
     const shell = element('div', 'app-shell');
     const masthead = element('header', 'masthead');
@@ -54,8 +57,21 @@ export function mountApp(rootEl, app = {}) {
     intro.append(element('div', '', 'Practice table'), element('span', '', `${state.numPlayers} players · No-Limit Hold’em${state.handId.startsWith('mock-') ? ' · Sample hand' : ''}`));
     const layout = element('main', 'game-layout');
     const left = element('div', 'game-column');
-    left.append(renderTable(state, boardReveal(state)));
+    left.append(renderTable(state, boardReveal(state), revealHands));
     const controls = renderControls(state, legal, handleAction, handleNextHand);
+    if (state.street === 'complete') {
+      const reveal = element('button', 'button button-secondary reveal-hands',
+        revealHands ? 'Hide unshown hands' : 'Show everyone’s hands');
+      reveal.type = 'button';
+      reveal.setAttribute('aria-pressed', String(revealHands));
+      reveal.addEventListener('click', () => {
+        if (busy || session.getState().street !== 'complete' || session.getState().handId !== state.handId) return;
+        revealedHandId = revealHands ? null : state.handId;
+        render();
+        rootEl.querySelector('.reveal-hands')?.focus();
+      });
+      controls.append(reveal);
+    }
     if (busy) controls.querySelectorAll('button, input').forEach(node => { node.disabled = true; });
     timerNode = element('span', 'action-timer');
     timerNode.setAttribute('role', 'timer');

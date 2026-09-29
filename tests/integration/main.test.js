@@ -3,12 +3,13 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { createApp } from '../../src/main.js';
 
-test('main wiring plays 50 random full hands with placeholder bots', async () => {
+test('main wiring plays 50 random full hands with the available bots', async () => {
   let nextSeed = 1000;
   const app = await createApp({ stakes: 'micro', poolOverride: null }, {
     seedSource: () => nextSeed++, delay: async () => {},
   });
-  assert.equal(app.features.realBots, false);
+  const realBots = await import('../../src/bots/index.js').catch(() => null);
+  assert.equal(app.features.realBots, Boolean(realBots?.decideAction && realBots?.createBotProfile));
   assert.equal(app.session.getState().handId.startsWith('mock-'), false);
   await app.session.ready;
 
