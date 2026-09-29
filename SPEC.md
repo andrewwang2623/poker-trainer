@@ -61,7 +61,8 @@ Imports flow one way: `ui → (anything via app object)`, `export/tracker/explai
 - **Seats** run 0..N−1 clockwise. Positions come from `POSITIONS_BY_SIZE[N]`, listed in preflop action order
   and ending at the BB seat. Heads-up, the SB is the button: it acts first preflop and last postflop.
 - **RNG:** every random choice goes through a seeded `Rng`. A hand is fully reproducible from
-  `ScenarioConfig` plus hero actions. Bots and the coach get their own RNG derived from `seed`.
+  `ScenarioConfig` plus hero actions. The deck, bots and the coach each get their own RNG from
+  `deriveSeed(seed, label)`; no two operations may share one stream (§13 item 11).
 - **Immutability:** `applyAction` returns a new `GameState`. It never mutates its input.
 - **Depth band:** effective stack in bb: `short` ≤ 40, `mid` 40–100, `deep` > 100.
 - **Texture** (`boardTexture`): `monotone` = 3+ cards of one suit. `paired` = any paired board. `wet` = two-tone
@@ -198,7 +199,7 @@ Redaction is the exporter's job.
 ```js
 createRng(seed) → Rng
 createScenario({stakes, poolOverride?, seed, createdAt}, rng) → ScenarioConfig
-createHand(scenario, {cards?}) → GameState      // shuffles with rng(seed), posts blinds, deals
+createHand(scenario, {cards?}) → GameState      // shuffles with rng(deriveSeed(seed,'deck')), posts blinds, deals
   // optional cards = {holes?: {[seat]: Card[2]}, board?: Card[≤5]} presets hole cards and/or the first
   // board cards (tests and replays); the rest come from the seeded shuffle. main.js uses one argument.
 getLegalActions(state) → LegalActions | null      // null when no one is to act
@@ -519,3 +520,7 @@ From `REQUESTS-claude.md` (2026-09-28). The sections named are updated to match.
     a dash, then the first 8 hex characters of a one-way hash of `seed`. `createdAt` is a new ScenarioConfig field
     that main.js sets to `Date.now()`, so the engine stays pure and reproducible. This fixes two problems: the
     old format put the raw seed in the id, and repeated 32-bit seeds would have made ids collide.
+11. **Separate deck stream** (§2, §6 Engine; owner decision): `createHand` shuffles with
+    `createRng(deriveSeed(seed, 'deck'))`, not `createRng(seed)`. `createScenario` also draws from `seed`, so
+    sharing a stream made the deal depend on table size (premiums were 2.06% at 9-handed vs 2.56% expected over
+    1M deals). Every other random consumer (bots, coach, all-in EV) likewise uses its own `deriveSeed` label.
