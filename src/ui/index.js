@@ -44,6 +44,8 @@ export function mountApp(rootEl, app = {}) {
     if (type) handleAction({ type });
   });
   let busy = false;
+  let dealing = false;
+  let operation = 0;
   let error = '';
   let revealedHandId = null;
   let rabbitHandId = null;
@@ -106,6 +108,11 @@ export function mountApp(rootEl, app = {}) {
       }
     }
     if (busy) controls.querySelectorAll('button, input').forEach(node => { node.disabled = true; });
+    const newHand = element('button', 'button button-secondary new-hand', 'New hand');
+    newHand.type = 'button';
+    newHand.disabled = dealing;
+    newHand.addEventListener('click', handleNewHand);
+    controls.querySelector('.panel-heading').append(newHand);
     timerNode = element('span', 'action-timer');
     timerNode.setAttribute('role', 'timer');
     timerNode.setAttribute('aria-label', 'Time remaining for your action');
@@ -175,24 +182,36 @@ export function mountApp(rootEl, app = {}) {
     timer.sync(timedTurn ? `${state.handId}:${state.street}:${state.events.length}` : null, timerSettings.seconds);
   }
 
-  async function handleAction(action) {
-    if (busy || !action) return;
+  async function runOperation(run, replace = false) {
+    if (dealing || (busy && !replace)) return;
+    const current = ++operation;
     busy = true;
+    dealing = replace;
     error = '';
+    timer.stop();
     render();
-    try { await session.act(action); }
-    catch (cause) { error = cause instanceof Error ? cause.message : String(cause); }
-    finally { busy = false; render(); }
+    try {
+      const result = run();
+      dealing = false;
+      render();
+      await result;
+    } catch (cause) {
+      if (current === operation) error = cause instanceof Error ? cause.message : String(cause);
+    } finally {
+      if (current === operation) { dealing = false; busy = false; render(); }
+    }
   }
 
-  async function handleNextHand() {
-    if (busy) return;
-    busy = true;
-    error = '';
-    render();
-    try { await session.nextHand(settings); }
-    catch (cause) { error = cause instanceof Error ? cause.message : String(cause); }
-    finally { busy = false; render(); }
+  function handleAction(action) {
+    if (action) return runOperation(() => session.act(action));
+  }
+
+  function handleNextHand() {
+    return runOperation(() => session.nextHand(settings));
+  }
+
+  function handleNewHand() {
+    return runOperation(() => session.newHand(settings), true);
   }
 
   const unsubscribe = session.subscribe?.(render);

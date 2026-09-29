@@ -12,7 +12,6 @@ export function createEngineSession(engine, bots, initialSettings = {}, options 
   const sessionId = options.sessionId ?? `session-${randomWord().toString(36)}-${Date.now().toString(36)}`;
   const now = options.now ?? Date.now;
   const seedSource = options.seedSource ?? (() => Math.floor(sessionRng() * 0x100000000));
-  const delay = options.delay ?? (ms => new Promise(resolve => setTimeout(resolve, ms)));
   const recentHands = [];
   const reads = bots.createHeroReads?.() ?? null;
   let settings = initialSettings;
@@ -25,6 +24,8 @@ export function createEngineSession(engine, bots, initialSettings = {}, options 
   let createdAt;
   let pending = null;
   let recorded = false;
+  let generation = 0;
+  let cancelWait = null;
 
   const notify = () => { for (const listener of listeners) listener(); };
 
@@ -74,15 +75,32 @@ export function createEngineSession(engine, bots, initialSettings = {}, options 
     notify();
   }
 
+  // Resolve cancelled waits too, so abandoned act()/ready promises can settle.
+  function waitForBot(ms) {
+    return new Promise((resolve, reject) => {
+      let handle;
+      const cancel = () => { clearTimeout(handle); resolve(); };
+      cancelWait = cancel;
+      const done = callback => value => {
+        if (cancelWait === cancel) cancelWait = null;
+        callback(value);
+      };
+      if (options.delay) Promise.resolve(options.delay(ms)).then(done(resolve), done(reject));
+      else handle = setTimeout(done(resolve), ms);
+    });
+  }
+
   function advanceBots() {
     if (pending) return pending;
-    pending = (async () => {
-      while (!engine.isComplete(state) && state.actingSeat !== state.heroSeat) {
+    const current = generation;
+    const run = (async () => {
+      while (current === generation && !engine.isComplete(state) && state.actingSeat !== state.heroSeat) {
         const seat = state.actingSeat;
         if (seat === null) break;
-        await delay(botActionDelay(botSpeed, pacingRng(), {
+        await waitForBot(botActionDelay(botSpeed, pacingRng(), {
           folded: state.players[state.heroSeat].folded, enabled: botPacing, outSpeed: outBotSpeed,
         }));
+        if (current !== generation) return;
         const view = engine.getView(state, seat);
         const action = bots.decideAction(view, state.players[seat].profile, {
           rng: botRng, heroStats: reads?.summary() ?? null,
@@ -90,9 +108,23 @@ export function createEngineSession(engine, bots, initialSettings = {}, options 
         state = engine.applyAction(state, action);
         notify();
       }
-      await finishHand();
+      if (current === generation) await finishHand();
     })();
-    return pending.finally(() => { pending = null; });
+    const result = run.finally(() => { if (pending === result) pending = null; });
+    pending = result;
+    return result;
+  }
+
+  function newHand(nextSettings = settings) {
+    // A completed hand still belongs in history, even during its final UI notification.
+    const finishing = finishHand();
+    generation++;
+    cancelWait?.();
+    cancelWait = null;
+    pending = null;
+    settings = nextSettings;
+    startHand();
+    return Promise.all([finishing, advanceBots()]).then(() => state);
   }
 
   startHand();
@@ -113,13 +145,10 @@ export function createEngineSession(engine, bots, initialSettings = {}, options 
       await advanceBots();
       return state;
     },
+    newHand,
     async nextHand(nextSettings = settings) {
-      if (pending) await pending;
       if (!engine.isComplete(state)) throw new RangeError('Finish this hand first');
-      settings = nextSettings;
-      startHand();
-      await advanceBots();
-      return state;
+      return newHand(nextSettings);
     },
   };
 }

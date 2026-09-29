@@ -217,6 +217,9 @@ export function createMockSession(settings = {}) {
       }
       return state;
     },
+    newHand(nextSettings = settings) {
+      return this.nextHand(nextSettings);
+    },
     nextHand(nextSettings = settings) {
       settings = nextSettings;
       state = createMockGameState({ ...settings, handNumber: ++handNumber });
