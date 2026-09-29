@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mountApp } from '../../src/ui/index.js';
 import { renderTable } from '../../src/ui/table.js';
 import { createMockSession } from '../../src/ui/mock.js';
+import { loadBotSpeed } from '../../src/ui/bot-speed.js';
 
 class Node {
   constructor(tag) {
@@ -93,4 +94,27 @@ test('table refuses early reveal and preserves showdown cards when reveal is off
   assert.equal(renderTable(state).querySelectorAll('.card-back').length, 8);
   assert.equal(renderTable(state, [], true).querySelectorAll('.card-back').length, 0);
   assert.equal(renderTable(state, [], false).querySelectorAll('.card-back').length, 8);
+});
+
+test('AI speed control loads, applies during a hand, and persists its selection', t => {
+  const session = setup(t);
+  const saved = new Map([['felt-theory-bot-speed', 'slow']]);
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
+    getItem: key => saved.get(key) ?? null, setItem: (key, value) => saved.set(key, value),
+  } });
+  const speeds = [];
+  session.setBotSpeed = value => speeds.push(value);
+  const root = new Node('div');
+  const app = mountApp(root, { session });
+  t.after(() => app.destroy());
+  const select = root.querySelector('#bot-speed');
+  assert.equal(select.value, 'slow');
+  assert.equal(select.children.length, 5);
+  assert.deepEqual(speeds, ['slow']);
+  select.value = 'study';
+  select.events.change();
+  assert.deepEqual(speeds, ['slow', 'study']);
+  assert.equal(loadBotSpeed(), 'study');
+  app.render();
+  assert.equal(root.querySelector('#bot-speed').value, 'study');
 });

@@ -1,4 +1,5 @@
 import { seedHash } from './seed-hash.js';
+import { botActionDelay, normalizeBotSpeed } from './bot-speed.js';
 
 const randomWord = () => globalThis.crypto.getRandomValues(new Uint32Array(1))[0];
 
@@ -13,6 +14,7 @@ export function createEngineSession(engine, bots, initialSettings = {}, options 
   const delay = options.delay ?? (ms => new Promise(resolve => setTimeout(resolve, ms)));
   const recentHands = [];
   let settings = initialSettings;
+  let botSpeed = normalizeBotSpeed(initialSettings.botSpeed);
   let state;
   let botRng;
   let createdAt;
@@ -74,7 +76,8 @@ export function createEngineSession(engine, bots, initialSettings = {}, options 
       while (!engine.isComplete(state) && state.actingSeat !== state.heroSeat) {
         const seat = state.actingSeat;
         if (seat === null) break;
-        await delay(400 + Math.floor(botRng() * 501));
+        // Consume the same random draw at every speed to preserve seeded decisions.
+        await delay(botActionDelay(botSpeed, botRng()));
         const view = engine.getView(state, seat);
         const action = bots.decideAction(view, state.players[seat].profile, { rng: botRng, heroStats: null });
         state = engine.applyAction(state, action);
@@ -92,6 +95,7 @@ export function createEngineSession(engine, bots, initialSettings = {}, options 
     getState: () => state,
     getLegalActions: () => state.actingSeat === state.heroSeat ? engine.getLegalActions(state) : null,
     getRecentHands: () => recentHands.slice(),
+    setBotSpeed(value) { botSpeed = normalizeBotSpeed(value); },
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
     async act(action) {
       if (pending || state.actingSeat !== state.heroSeat) throw new RangeError('Hero is not acting');

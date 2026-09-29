@@ -1,6 +1,7 @@
 import { STAKES, TIER_LABELS, TIERS } from '../shared/schemas.js';
 import { element } from './dom.js';
 import { LOOKS, TEXT_SIZES, THEMES } from './appearance.js';
+import { BOT_SPEEDS, normalizeBotSpeed } from './bot-speed.js';
 
 function percentages(pool) {
   const whole = TIERS.map(tier => Math.round((pool[tier] ?? 0) * 100));
@@ -47,6 +48,20 @@ export function renderSettings(settings, onChange, appearance, onAppearanceChang
   stakeSelect.value = settings.stakes;
   stakeSelect.addEventListener('change', () => onChange({ ...settings, stakes: stakeSelect.value }));
   section.append(stakeLabel, stakeSelect);
+
+  const speedLabel = element('label', 'field-label', 'AI action speed');
+  speedLabel.htmlFor = 'bot-speed';
+  const speedSelect = element('select', 'select-input');
+  speedSelect.id = speedLabel.htmlFor;
+  for (const speed of BOT_SPEEDS) {
+    const option = element('option', '', speed.label);
+    option.value = speed.id;
+    speedSelect.append(option);
+  }
+  speedSelect.value = normalizeBotSpeed(settings.botSpeed);
+  speedSelect.addEventListener('change', () => onChange({ ...settings, botSpeed: speedSelect.value }));
+  section.append(speedLabel, speedSelect,
+    element('p', 'panel-note', 'Time before each AI action. Applies from the next action; a wait already in progress finishes first.'));
 
   const timerRow = element('label', 'switch-row');
   const timerToggle = element('input', 'switch-input');
