@@ -315,6 +315,29 @@ test('createHand validates bounties; views and records carry them', () => {
   }
 });
 
+test('new stat flags: faced and folded to a postflop bet', () => {
+  const opts = { stacks: [10000, 10000, 10000], button: 0, hero: 1 };
+  // 3-handed, button 0: seat 0 acts first preflop, SB 1 first postflop.
+  let s = play(createHand(makeScenario(opts)), [[0, 'call'], [1, 'call'], [2, 'check']]);
+  s = play(s, [[1, 'check'], [2, 'bet', 200], [0, 'call'], [1, 'fold']]);
+  let rec = buildHandRecord(checkDown(s), { sessionId: 's' });
+  assert.equal(rec.statFlags.facedPostflopBet, true);
+  assert.equal(rec.statFlags.foldedToPostflopBet, true);
+
+  s = play(createHand(makeScenario(opts)), [[0, 'call'], [1, 'call'], [2, 'check']]);
+  s = play(s, [[1, 'check'], [2, 'check'], [0, 'bet', 300], [1, 'call'], [2, 'fold']]);
+  rec = buildHandRecord(checkDown(s), { sessionId: 's' });
+  assert.equal(rec.statFlags.facedPostflopBet, true);
+  assert.equal(rec.statFlags.foldedToPostflopBet, false);
+
+  rec = buildHandRecord(checkDown(createHand(makeScenario(opts))), { sessionId: 's' });
+  assert.equal(rec.statFlags.facedPostflopBet, false);
+  assert.equal(rec.statFlags.foldedToPostflopBet, false);
+  // Preflop bets don't count.
+  s = play(createHand(makeScenario(opts)), [[0, 'raise', 300], [1, 'fold'], [2, 'fold']]);
+  assert.equal(buildHandRecord(s, { sessionId: 's' }).statFlags.facedPostflopBet, false);
+});
+
 // ---------------------------------------------------------------------------
 // Bounties off / random play
 // ---------------------------------------------------------------------------
