@@ -87,6 +87,43 @@ Note: Estimate only. Poker results have high variance; this combines a model wit
 === END ===`);
 });
 
+test('rabbit exports label undealt streets without changing actual boards, results, or redaction', () => {
+  const fullBoard = ['As', '7d', '2c', '9s', '3h'];
+  for (const length of [0, 3, 4]) {
+    const record = handFixture();
+    record.board = fullBoard.slice(0, length);
+    const playedStreets = length === 0 ? ['preflop'] : length === 3 ? ['preflop', 'flop'] : ['preflop', 'flop', 'turn'];
+    record.events = record.events.filter(event => playedStreets.includes(event.street));
+    const before = structuredClone(record);
+    const rabbitCardsByHand = new Map([[record.id, fullBoard.slice(length)]]);
+    const regular = formatHand(record, { hideOpponentCards: true });
+    const text = formatHand(record, { hideOpponentCards: true, rabbitCardsByHand });
+    assert.doesNotMatch(regular, /RABBIT HUNT/);
+    const expected = length === 0 ? 'Flop [As 7d 2c] | Turn [9s] | River [3h]'
+      : length === 3 ? 'Turn [9s] | River [3h]' : 'River [3h]';
+    assert.ok(text.includes(`RABBIT HUNT (hypothetical; not dealt, result unchanged): ${expected}`));
+    assert.equal(text.split('\n').find(line => line.startsWith('RESULT:')),
+      regular.split('\n').find(line => line.startsWith('RESULT:')));
+    assert.doesNotMatch(text, /Qs|Qh|\nRIVER/);
+    assert.deepEqual(record, before);
+    assert.deepEqual(rabbitCardsByHand.get(record.id), fullBoard.slice(length));
+  }
+});
+
+test('rabbit cards stay associated with their hand and incomplete previews are omitted', () => {
+  const first = { ...handFixture(), id: 'first', board: [] };
+  const second = { ...handFixture(), id: 'second', timestamp: first.timestamp + 1, board: [] };
+  const rabbitCardsByHand = new Map([['first', ['2h', '3s', '4d', '5c', '6h']]]);
+  const text = formatHands([second, first], { rabbitCardsByHand });
+  const blocks = text.split('--- Hand');
+  assert.match(blocks[1], /RABBIT HUNT.*Flop \[2h 3s 4d\].*River \[6h\]/);
+  assert.doesNotMatch(blocks[2], /RABBIT HUNT/);
+  for (const values of [[], ['2h'], ['2h', '2h', '4d', '5c', '6h'], ['invalid', '3s', '4d', '5c', '6h']]) {
+    assert.doesNotMatch(formatHand(first, { rabbitCardsByHand: new Map([['first', values]]) }), /RABBIT HUNT/);
+  }
+  assert.doesNotMatch(formatHand({ ...first, board: ['As', '7d', '2c', '9s', '3h'] }, { rabbitCardsByHand }), /RABBIT HUNT/);
+});
+
 test('summary handles overlapping windows, trends, patterns and unavailable rates', () => {
   const all = statsFixture();
   const recent = { ...statsFixture(), window: 500, hands: 500, vpip: null, af: null, coachedHands: 0, trend: { bbPer100Delta: 3.1, evLossPer100Delta: -1.2, vpipDelta: -.02 } };

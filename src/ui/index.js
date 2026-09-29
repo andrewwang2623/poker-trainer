@@ -94,6 +94,9 @@ export function mountApp(rootEl, app = {}) {
           const current = session.getState();
           if (busy || current.handId !== state.handId || !canRabbitHunt(current)) return;
           rabbitHandId = rabbitHunt ? null : state.handId;
+          if (rabbitHandId !== null) {
+            exportPanel?.setRabbitCards(state.handId, current.deck.slice(0, 5 - current.board.length));
+          }
           render();
           rootEl.querySelector('.rabbit-hunt')?.focus();
         });

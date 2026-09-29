@@ -75,3 +75,27 @@ test('copy in progress disables controls and prevents duplicate requests', async
   assert.equal(f.toggle.disabled, false);
   assert.ok(f.buttons.every(button => !button.disabled));
 });
+
+test('revealed rabbit cards are copied for their hand, retained for last ten, and pruned with old records', async t => {
+  const copied = [];
+  const f = setup(t, async text => copied.push(text));
+  const first = { ...handFixture(), id: 'first', board: [] };
+  const second = { ...handFixture(), id: 'second', timestamp: first.timestamp + 1 };
+  f.setRecords([first]);
+  await f.buttons[0].events.click();
+  assert.doesNotMatch(copied.at(-1), /RABBIT HUNT/);
+  const rabbit = ['2h', '3s', '4d', '5c', '6h'];
+  f.panel.setRabbitCards(first.id, rabbit);
+  rabbit[0] = 'Ah';
+  await f.buttons[0].events.click();
+  assert.match(copied.at(-1), /RABBIT HUNT.*Flop \[2h 3s 4d\]/);
+  f.setRecords([second, first]);
+  await f.buttons[0].events.click();
+  assert.doesNotMatch(copied.at(-1), /RABBIT HUNT/);
+  await f.buttons[1].events.click();
+  assert.equal(copied.at(-1).match(/RABBIT HUNT/g).length, 1);
+  f.setRecords([second]);
+  f.setRecords([first]);
+  await f.buttons[0].events.click();
+  assert.doesNotMatch(copied.at(-1), /RABBIT HUNT/);
+});

@@ -16,7 +16,7 @@ function actionText(event, decision = false) {
   return `${verbs[event.action]}${['call', 'bet', 'raise'].includes(event.action) ? ` ${chips(amount)}` : ''}${event.allIn ? ' (all-in)' : ''}`;
 }
 
-function handBlock(record, index, count, { hideOpponentCards = false, explain } = {}) {
+function handBlock(record, index, count, { hideOpponentCards = false, explain, rabbitCardsByHand } = {}) {
   const stakes = STAKES[record.stakes];
   const hero = record.players.find(player => player.seat === record.heroSeat);
   const player = seat => record.players.find(item => item.seat === seat);
@@ -77,6 +77,17 @@ function handBlock(record, index, count, { hideOpponentCards = false, explain } 
   const winnings = record.events.filter(event => event.type === 'award' && event.seat === record.heroSeat)
     .reduce((sum, event) => sum + event.amount, 0);
   lines.push(`RESULT: Hero wins ${chips(winnings)} (net ${signed(record.heroNetBb)}bb) | rake ${bb(record.rakeBb)}${record.result.heroAllInEv ? ` | all-in EV net ${signed(record.result.heroAllInEv.evNetChips / CHIPS_PER_BB)}bb` : ''}`);
+  const rabbit = rabbitCardsByHand?.get(record.id);
+  if ([0, 3, 4].includes(record.board.length) && Array.isArray(rabbit) &&
+      rabbit.length === 5 - record.board.length && rabbit.every(card => /^[2-9TJQKA][cdhs]$/.test(card)) &&
+      new Set([...record.board, ...rabbit]).size === 5) {
+    const preview = [...record.board, ...rabbit];
+    const streets = [];
+    if (record.board.length === 0) streets.push(`Flop ${cards(preview.slice(0, 3))}`);
+    if (record.board.length < 4) streets.push(`Turn ${cards(preview.slice(3, 4))}`);
+    streets.push(`River ${cards(preview.slice(4))}`);
+    lines.push(`RABBIT HUNT (hypothetical; not dealt, result unchanged): ${streets.join(' | ')}`);
+  }
   if (record.coach?.flags.length) {
     lines.push('COACH FLAGS:');
     for (const flag of record.coach.flags) {
@@ -90,7 +101,10 @@ function handBlock(record, index, count, { hideOpponentCards = false, explain } 
   return lines.join('\n');
 }
 
-/** Pure text export; timestamps are UTC and inputs are never mutated. */
+/** Pure text export; timestamps are UTC and inputs are never mutated.
+ * opts.rabbitCardsByHand optionally maps hand IDs to revealed, undealt board cards.
+ * It is separate from HandRecord so hypothetical cards never become played cards.
+ */
 export function formatHands(records, opts = {}) {
   const ordered = [...records].sort((a, b) => a.timestamp - b.timestamp);
   return ['=== POKER TRAINER EXPORT v1 ===', ...(opts.includePrompt === false ? [] : [PROMPT, '']),

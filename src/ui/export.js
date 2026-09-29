@@ -2,6 +2,7 @@ import { element } from './dom.js';
 
 /** Keep clipboard access in the UI; the exporter only receives records and options. */
 export function createExportPanel(app, session) {
+  const rabbitCardsByHand = new Map();
   const node = element('section', 'panel export-panel');
   node.append(element('h2', '', 'Export hands'));
   const label = element('label', 'export-toggle');
@@ -29,7 +30,7 @@ export function createExportPanel(app, session) {
       fallback.hidden = true;
       status.textContent = '';
       try {
-        const options = { hideOpponentCards: toggle.checked, explain: app.explain?.explainFlag };
+        const options = { hideOpponentCards: toggle.checked, explain: app.explain?.explainFlag, rabbitCardsByHand };
         const text = count === 1 ? app.exporter.formatHand(records[0], options) : app.exporter.formatHands(records, options);
         try {
           await globalThis.navigator.clipboard.writeText(text);
@@ -55,10 +56,19 @@ export function createExportPanel(app, session) {
   toggle.addEventListener('change', () => { fallback.value = ''; fallback.hidden = true; status.textContent = ''; });
   node.append(label, buttons, status, fallback, element('small', '', 'Hand timestamps are UTC.'));
   function refresh() {
-    const empty = !(session.getRecentHands?.().length);
+    const records = session.getRecentHands?.() ?? [];
+    const retained = new Set(records.map(record => record.id));
+    for (const id of rabbitCardsByHand.keys()) if (!retained.has(id)) rabbitCardsByHand.delete(id);
+    const empty = !records.length;
     controls.forEach(button => { button.disabled = copying || empty; });
     toggle.disabled = copying;
   }
   refresh();
-  return { node, refresh };
+  return { node, refresh, setRabbitCards(id, cardCodes) {
+    rabbitCardsByHand.set(id, [...cardCodes]);
+    // A previously generated manual-copy history predates the new reveal.
+    fallback.value = '';
+    fallback.hidden = true;
+    status.textContent = '';
+  } };
 }

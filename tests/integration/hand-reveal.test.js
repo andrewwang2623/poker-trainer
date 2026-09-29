@@ -7,6 +7,7 @@ import { createMockSession } from '../../src/ui/mock.js';
 import { loadBotPacing, loadBotSpeed, loadOutBotSpeed } from '../../src/ui/bot-speed.js';
 import { loadStraddle, maybePostStraddle } from '../../src/ui/straddle.js';
 import { renderLog } from '../../src/ui/log.js';
+import * as exporter from '../../src/export/index.js';
 
 class Node {
   constructor(tag) {
@@ -131,6 +132,36 @@ test('rabbit hunt is post-hand only, toggles independently of hole cards, and re
   session.act({ type: 'fold' });
   app.render();
   assert.equal(root.querySelector('.rabbit-hunt').attributes['aria-pressed'], 'false');
+});
+
+test('clicking rabbit hunt includes its preview in the copied hand without changing the record', async t => {
+  const session = setup(t);
+  const copied = [];
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: {
+    clipboard: { writeText: async text => copied.push(text) },
+  } });
+  t.after(() => {
+    if (previous) Object.defineProperty(globalThis, 'navigator', previous);
+    else delete globalThis.navigator;
+  });
+  session.act({ type: 'fold' });
+  const record = engine.buildHandRecord(session.getState(), { sessionId: 'test', timestamp: 123456789 });
+  const before = structuredClone(record);
+  session.getRecentHands = () => [record];
+  const root = new Node('div');
+  const app = mountApp(root, { session, exporter, features: { export: true } });
+  t.after(() => app.destroy());
+  await root.querySelector('.export-actions').children[0].events.click();
+  assert.doesNotMatch(copied.at(-1), /RABBIT HUNT/);
+  root.querySelector('.rabbit-hunt').events.click();
+  await root.querySelector('.export-actions').children[0].events.click();
+  assert.match(copied.at(-1), /RABBIT HUNT.*hypothetical/);
+  for (const card of session.getState().deck.slice(0, 5)) assert.ok(copied.at(-1).includes(card));
+  root.querySelector('.rabbit-hunt').events.click();
+  await root.querySelector('.export-actions').children[0].events.click();
+  assert.match(copied.at(-1), /RABBIT HUNT/);
+  assert.deepEqual(record, before);
 });
 
 test('rabbit cards match the engine runout after preflop, flop, and turn folds without changing records', t => {
