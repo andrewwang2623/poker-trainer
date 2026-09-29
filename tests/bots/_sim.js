@@ -3,6 +3,7 @@
 // profile null, so profiles are tracked here by seat (other bots see that seat as an unknown player).
 import {
   createRng, deriveSeed, createScenario, createHand, applyAction, getView, isComplete, normalizePool, sampleTier,
+  holdsBounty,
 } from '../../src/engine/index.js';
 import { TIERS } from '../../src/shared/schemas.js';
 import { decideAction, createBotProfile, poolForStakes } from '../../src/bots/index.js';
@@ -13,6 +14,7 @@ function emptyTally() {
   return {
     seatHands: 0, vpip: 0, pfr: 0, threeBetOpp: 0, threeBet: 0,
     bets: 0, raises: 0, calls: 0, facingBet: 0, foldToBet: 0, sawFlop: 0, wtsd: 0, decisions: 0,
+    bountyHeld: 0, bountyHeldVpip: 0, bountyWon: 0, bountyNet: 0,
     target: { vpip: 0, pfr: 0, threeBet: 0, aggression: 0, foldToBet: 0 },
   };
 }
@@ -53,6 +55,13 @@ function tallyHand(state, profiles, tallies) {
     t.seatHands++;
     for (const k of ['vpip', 'pfr', 'threeBetOpp', 'threeBet', 'sawFlop']) if (s[k]) t[k]++;
     if (state.result.showdownSeats.includes(seat)) t.wtsd++;
+    // Bounties (§15): hands dealt a live bounty, how often it was played and won, and the bounty net.
+    if (state.bounties.some((b) => holdsBounty(state.players[seat].holeCards, b))) {
+      t.bountyHeld++;
+      if (s.vpip) t.bountyHeldVpip++;
+    }
+    if (state.events.some((e) => e.type === 'bounty' && e.seat === seat)) t.bountyWon++;
+    t.bountyNet += state.result.bountyNetChips[seat];
     for (const k of Object.keys(t.target)) t.target[k] += profile[k];
   });
 }
@@ -62,18 +71,18 @@ function foldedPreflop(state, seat) {
 }
 
 /**
- * @param {{hands?: number, seed?: number, stakes?: string, pool?: Object, straddle?: Object}} opts
+ * @param {{hands?: number, seed?: number, stakes?: string, pool?: Object, straddle?: Object, bounty?: Object}} opts
  *   pool defaults to an even mix of all four tiers so every tier gets a sample; pass stakes to use its
- *   default pool. straddle is passed to createScenario.
+ *   default pool. straddle and bounty are passed to createScenario.
  * @returns {Object<string, Object>} per tier: observed rates and mean profile targets
  */
-export function simulateBotHands({ hands = 1000, seed = 1, stakes, pool, straddle } = {}) {
+export function simulateBotHands({ hands = 1000, seed = 1, stakes, pool, straddle, bounty } = {}) {
   const tierPool = pool ? normalizePool(pool) : stakes ? poolForStakes(stakes) : UNIFORM_POOL;
   const session = createRng(seed);
   const tallies = Object.fromEntries(TIERS.map((t) => [t, emptyTally()]));
   for (let h = 0; h < hands; h++) {
     const handSeed = Math.floor(session() * 4294967296);
-    const scenario = createScenario({ stakes: stakes ?? 'mid', seed: handSeed, createdAt: h, straddle },
+    const scenario = createScenario({ stakes: stakes ?? 'mid', seed: handSeed, createdAt: h, straddle, bounty },
       createRng(handSeed));
     const botRng = createRng(deriveSeed(handSeed, 'bots'));
     const profiles = scenario.seats.map(() => createBotProfile(sampleTier(tierPool, botRng), botRng));
@@ -99,6 +108,13 @@ export function simulateBotHands({ hands = 1000, seed = 1, stakes, pool, straddl
       foldToBet: rate(t.foldToBet, t.facingBet),
       wtsd: rate(t.wtsd, t.sawFlop),
       decisions: t.decisions,
+      bounty: {
+        held: t.bountyHeld,
+        playedWhenHeld: rate(t.bountyHeldVpip, t.bountyHeld),
+        won: t.bountyWon,
+        wonWhenHeld: rate(t.bountyWon, t.bountyHeld),
+        bbPer100: t.seatHands ? (100 * t.bountyNet) / 100 / t.seatHands : 0,
+      },
       target: Object.fromEntries(Object.entries(t.target).map(([k, v]) => [k, rate(v, t.seatHands)])),
     };
   }

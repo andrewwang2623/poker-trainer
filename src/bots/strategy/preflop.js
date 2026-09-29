@@ -15,6 +15,7 @@ import { CHIPS_PER_BB } from '../../shared/schemas.js';
 import { opponentRanges } from './ranges.js';
 import { openTo, threeBetTo, fourBetTo } from './sizing.js';
 import { TIER_STYLE, POSITION_WIDTH, PREFLOP_NOISE, POSTFLOP_NOISE } from './style.js';
+import { bountyPreflop } from './bounty.js';
 
 /** A stack-off decision: the raise is at least this share of our chips for the street. */
 const COMMIT_SHARE = 0.35;
@@ -107,9 +108,12 @@ export function preflopDecision(view, profile, ctx, adj) {
   }
   const ip = info.raiserSeat === null ? true
     : postflopOrder(view).indexOf(view.seat) > postflopOrder(view).indexOf(info.raiserSeat);
-  return profile.usesCharts
+  const decision = profile.usesCharts
     ? chartDecision(view, profile, ctx, adj, info, ip)
     : ruleDecision(view, profile, ctx, info, ip);
+  // A live bounty hand is played as at least a medium-strength hand (SPEC §15).
+  if (decision.type !== 'fold' || !(legal.toCall > 0)) return decision;
+  return bountyPreflop(view, profile, ctx.rng, info) ?? decision;
 }
 
 /**

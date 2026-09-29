@@ -7,6 +7,10 @@ import { opponentRanges, preflopRange, shareBeaten } from './ranges.js';
 import { betFraction } from './sizing.js';
 import { choose } from './preflop.js';
 import { TIER_STYLE, POSTFLOP_NOISE } from './style.js';
+import {
+  BOUNTY_BLUFF_BONUS, BOUNTY_CALL_BONUS, BOUNTY_RIVER_FOLD_CUT, bountyChase, couldHoldBounty, heldBounties,
+  heldBountyValue,
+} from './bounty.js';
 
 export const EQUITY_SAMPLES = 300;
 const BLUFF_BELOW = 0.35;
@@ -43,7 +47,13 @@ export function postflopDecision(view, profile, ctx, adj) {
   const rel = Math.min(1, (equity * (opps.length + 1)) / 2);
   const vThr = valueThreshold(profile.aggression) + adj.valueThrDelta;
   const texture = boardTexture(view.board);
-  const bluffP = profile.bluffFreq * adj.bluffMul / Math.max(1, opps.length);
+  // Bounties (SPEC §15): a held bounty that pays on a fold win makes bluffs worth more, and on the
+  // river any held bounty is worth calling for. All zero when no bounty applies.
+  const chase = bountyChase(profile);
+  const held = heldBounties(view);
+  const bluffBonus = held.some((b) => b.paysOn === 'showdownOrFold') ? chase * BOUNTY_BLUFF_BONUS : 0;
+  const riverChase = view.street === 'river' && held.length ? chase : 0;
+  const bluffP = (profile.bluffFreq + bluffBonus) * adj.bluffMul / Math.max(1, opps.length);
 
   const sized = (type, polar) => ({
     type,
@@ -87,12 +97,16 @@ export function postflopDecision(view, profile, ctx, adj) {
   if (rng() < 1 - profile.skill) {
     if (rel >= vThr) return { type: 'call' };
     const sizeRatio = toCall / Math.max(1, view.pot - toCall);
-    const fold = clamp(profile.foldToBet * (0.6 + 0.53 * sizeRatio), 0.05, 0.9);
+    const fold = clamp(profile.foldToBet * (0.6 + 0.53 * sizeRatio), 0.05, 0.9) * (1 - riverChase * BOUNTY_RIVER_FOLD_CUT);
     return rng() < fold ? { type: 'fold' } : { type: 'call' };
   }
 
   const facingHero = view.lastAggressorSeat === view.heroSeat;
-  const required = potOdds * (facingHero ? adj.callMul : 1) - (TIER_STYLE[profile.tier]?.looseCall ?? 0);
+  // River with a held bounty: the bounty is part of what a call can win.
+  const bountyPot = riverChase > 0 ? riverChase * heldBountyValue(view, held) : 0;
+  const callOdds = bountyPot > 0 ? toCall / (view.pot + toCall + bountyPot) : potOdds;
+  const holderBonus = couldHoldBounty(view, view.lastAggressorSeat) ? chase * BOUNTY_CALL_BONUS : 0;
+  const required = callOdds * (facingHero ? adj.callMul : 1) - (TIER_STYLE[profile.tier]?.looseCall ?? 0) - holderBonus;
   // Realization as in the coach's EV model (SPEC §8.2): all of it on the river, less out of position.
   const realized = equity * (view.street === 'river' ? 1 : inPosition(view) ? 0.95 : 0.85);
   let call = realized >= required;

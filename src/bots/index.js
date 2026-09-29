@@ -10,6 +10,7 @@ import { legalize } from './strategy/sizing.js';
 export { createBotProfile, TIER_RANGES } from './profiles.js';
 export { STAKES_POOL, poolForStakes, sampleTier } from './pool.js';
 export { createHeroReads } from './reads.js';
+export { BOUNTY_CHASE } from './strategy/style.js';
 
 /**
  * @param {import('../shared/schemas.js').SeatView} view
