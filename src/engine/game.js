@@ -4,7 +4,9 @@
 import {
   SCHEMA_VERSION, CHIPS_PER_BB, STAKES, POSITIONS_BY_SIZE, MIN_PLAYERS, MAX_PLAYERS,
 } from '../shared/schemas.js';
-import { createRng, deriveSeed, normalizeSeed } from './rng.js';
+import { createRng, deriveSeed } from './rng.js';
+import { sha256Hex } from './sha256.js';
+import { isValidCreatedAt } from './scenario.js';
 import { fullDeck, shuffle, cardCode, isValidCard } from './cards.js';
 import { evaluateCodes, scoreLabel } from './evaluator.js';
 import { forEachRunout } from './equity.js';
@@ -18,16 +20,18 @@ const ALL_IN_EV_SAMPLES = 20000;
 // Hand setup
 // ---------------------------------------------------------------------------
 
-function makeHandId(seed) {
-  const rng = createRng(deriveSeed(seed, 'handId'));
-  let id = normalizeSeed(seed).toString(16).padStart(8, '0');
-  for (let i = 0; i < 2; i++) id += Math.floor(rng() * 4294967296).toString(16).padStart(8, '0');
-  return id;
+/**
+ * base36 createdAt, a dash, then the first 8 hex chars of SHA-256(String(seed)) (SPEC §5).
+ * The hash is one-way, so the id (visible in every SeatView) doesn't reveal the seed.
+ */
+export function makeHandId(createdAt, seed) {
+  return `${createdAt.toString(36)}-${sha256Hex(String(seed)).slice(0, 8)}`;
 }
 
 function validateScenario(sc) {
   if (!sc || typeof sc !== 'object') throw new TypeError('createHand: scenario required');
   if (!STAKES[sc.stakes]) throw new RangeError(`Unknown stakes: ${sc.stakes}`);
+  if (!isValidCreatedAt(sc.createdAt)) throw new TypeError('createHand: scenario.createdAt must be ms since epoch');
   const n = sc.numPlayers;
   if (!Number.isInteger(n) || n < MIN_PLAYERS || n > MAX_PLAYERS) {
     throw new RangeError(`numPlayers must be ${MIN_PLAYERS}..${MAX_PLAYERS}`);
@@ -95,7 +99,7 @@ export function createHand(scenario, opts = {}) {
 
   const s = {
     schemaVersion: SCHEMA_VERSION,
-    handId: makeHandId(scenario.seed),
+    handId: makeHandId(scenario.createdAt, scenario.seed),
     seed: scenario.seed,
     stakes: scenario.stakes,
     numPlayers: n,
@@ -523,15 +527,15 @@ export function applyAction(state, action) {
 }
 
 /**
- * The state as one seat may see it: no deck, other seats' hole cards hidden until they
- * show down, and other seats' dealHole events removed.
+ * The state as one seat may see it: no deck or seed (the deck is a pure function of the seed),
+ * other seats' hole cards hidden until they show down, and other seats' dealHole events removed.
  * @returns {import('../shared/schemas.js').SeatView}
  */
 export function getView(state, seat) {
   const me = state.players[seat];
   if (!me) throw new RangeError(`No seat ${seat}`);
   const shown = new Set(state.events.filter((e) => e.type === 'showdown').map((e) => e.seat));
-  const { deck, ...rest } = state;
+  const { deck, seed, ...rest } = state;
   return {
     ...rest,
     seat,

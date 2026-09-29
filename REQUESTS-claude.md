@@ -27,3 +27,13 @@ should rely on them; if any is wrong, tell me and I'll change the engine.
 9. **`handId` is derived from `seed`**, so the same seed gives the same id. main.js must use a fresh
    seed per hand (e.g. draw it from a session RNG seeded from `crypto.getRandomValues`), or IndexedDB
    records with the same key will overwrite each other.
+
+## 2026-09-28 — Engine now implements §13 items 4 and 10 (FYI for Astra)
+
+- `createScenario` requires `createdAt` (a non-negative integer, ms since epoch) and copies it into
+  `ScenarioConfig.createdAt`. `createHand` throws a TypeError if the scenario has no valid `createdAt`.
+- `handId` is `createdAt.toString(36)` + `-` + the first 8 hex chars of SHA-256(`String(seed)`), computed
+  in `src/engine/sha256.js`. It matches `src/ui/seed-hash.js`, so the temporary workarounds in
+  `src/ui/session.js` (`scenario.createdAt = createdAt` and the handId rewrite) are no longer needed.
+  They're harmless if left in place.
+- `getView` no longer includes `seed`.

@@ -45,7 +45,7 @@ test('placeholder checks when it can, otherwise calls', () => {
 test('main-style loop: placeholder bots vs a scripted hero play complete, legal hands', () => {
   for (let seed = 1; seed <= 200; seed++) {
     const rng = createRng(seed);
-    const scenario = createScenario({ stakes: 'micro', seed }, rng);
+    const scenario = createScenario({ stakes: 'micro', seed, createdAt: 1790000000000 + seed }, rng);
     const botRng = createRng(deriveSeed(seed, 'bots'));
     for (const seat of scenario.seats) {
       if (!seat.isHero) seat.profile = createBotProfile(seat.tier, botRng);

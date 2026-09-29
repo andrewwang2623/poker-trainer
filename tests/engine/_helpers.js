@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import { applyAction } from '../../src/engine/game.js';
 
 /** Build a ScenarioConfig with explicit chip stacks. */
-export function makeScenario({ stakes = 'micro', stacks, button = 0, hero = 0, seed = 1 }) {
+export function makeScenario({ stakes = 'micro', stacks, button = 0, hero = 0, seed = 1, createdAt = 1790000000000 }) {
   return {
     seed,
+    createdAt,
     stakes,
     numPlayers: stacks.length,
     buttonSeat: button,

@@ -25,13 +25,15 @@ function sampleTier(pool, rng) {
 }
 
 /**
- * @param {{stakes: import('../shared/schemas.js').StakesId, poolOverride?: Object, seed?: number}} opts
+ * @param {{stakes: import('../shared/schemas.js').StakesId, poolOverride?: Object, seed?: number,
+ *          createdAt: number}} opts  createdAt is ms since epoch (the caller reads the clock, not the engine).
  * @param {import('../shared/schemas.js').Rng} [rng] defaults to createRng(seed)
  * @returns {import('../shared/schemas.js').ScenarioConfig}
  */
-export function createScenario({ stakes, poolOverride, seed }, rng) {
+export function createScenario({ stakes, poolOverride, seed, createdAt }, rng) {
   if (!STAKES[stakes]) throw new RangeError(`Unknown stakes: ${stakes}`);
   if (seed === undefined && !rng) throw new TypeError('createScenario needs a seed or an rng');
+  if (!isValidCreatedAt(createdAt)) throw new TypeError('createScenario needs createdAt (ms since epoch)');
   rng = rng ?? createRng(seed);
   if (seed === undefined) seed = Math.floor(rng() * 4294967296);
   const pool = normalizePool(poolOverride ?? STAKES[stakes].pool, STAKES[stakes].pool);
@@ -50,5 +52,10 @@ export function createScenario({ stakes, poolOverride, seed }, rng) {
       profile: null,
     });
   }
-  return { seed, stakes, numPlayers, buttonSeat, heroSeat, seats };
+  return { seed, createdAt, stakes, numPlayers, buttonSeat, heroSeat, seats };
+}
+
+/** createdAt must be a non-negative integer millisecond timestamp. */
+export function isValidCreatedAt(createdAt) {
+  return Number.isSafeInteger(createdAt) && createdAt >= 0;
 }
