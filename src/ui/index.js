@@ -7,6 +7,7 @@ import { renderControls } from './controls.js';
 import { renderLog } from './log.js';
 import { renderSettings } from './settings.js';
 import { applyAppearance, loadAppearance, saveAppearance } from './appearance.js';
+import { createExportPanel } from './export.js';
 
 /** Mounts the table UI against a session adapter exposing state, legal actions, act and nextHand. */
 export function mountApp(rootEl, app = {}) {
@@ -14,6 +15,7 @@ export function mountApp(rootEl, app = {}) {
   let appearance = loadAppearance();
   applyAppearance(appearance);
   const session = app.session ?? createMockSession(settings);
+  const exportPanel = app.features?.export && app.exporter ? createExportPanel(app, session) : null;
   let timerSettings = loadTimer();
   let timerNode = null;
   let destroyed = false;
@@ -81,6 +83,10 @@ export function mountApp(rootEl, app = {}) {
     coachPanel.hidden = !app.features?.coach || !state.result;
     coachPanel.append(element('h2', '', 'Coach feedback'), element('p', '', 'Feedback appears after the coach is connected.'));
     right.append(coachPanel);
+    if (exportPanel) {
+      exportPanel.refresh();
+      right.append(exportPanel.node);
+    }
     const dashboardPanel = element('section', 'panel dashboard-panel');
     dashboardPanel.id = 'dashboard';
     dashboardPanel.hidden = !app.features?.dashboard;

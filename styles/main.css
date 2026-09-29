@@ -238,3 +238,9 @@ button:disabled, input:disabled { cursor: not-allowed; opacity: .55; }
   white-space: nowrap;
 }
 .action-timer.timer-urgent { color: #e35c5c; }
+
+.export-toggle { display: flex; align-items: center; gap: 8px; margin: 12px 0; }
+.export-toggle input { accent-color: var(--gold); }
+.export-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.export-status { font-size: calc(12px * var(--text-scale)); }
+.export-text { width: 100%; padding: 10px; background: var(--input-bg); color: var(--ink); border: 1px solid var(--panel-edge); border-radius: 8px; }
