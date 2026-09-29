@@ -306,11 +306,23 @@ Tier parameters are sampled uniformly per bot from these ranges:
   call with the next `vpip − pfr`, and 3-bet with the top `threeBet`. Widen by position (BTN ×1.3, UTG ×0.7).
   Add noise scaled by `1 − skill`.
 - **Preflop with charts:** sample an action from the `RANGE_CHART` frequencies for (position, band, action).
-  Facing a 3-bet or more: continue with the top 40% of the `threeBet` range and 4-bet the top 15% of it.
   Each chart bot scales the chart to its own profile, keeping its shape: `open` by `pfr / 0.175`, `call` by
   `(vpip − pfr) / 0.075` and `threeBet` by `threeBet / 0.06` (the unscaled chart's bot-only rates). Without
   this every chart bot plays identical ranges.
 - midReg and toughReg have similar VPIP/PFR on purpose; they differ in 3-bet rate, skill, mixing and exploits.
+- **Opener facing a 3-bet (regs):** continue (call or 4-bet) with the top share of the bot's own opening range
+  from that position: lowReg 40%, midReg 48%, toughReg 50% out of position, +4pp in position, +3pp heads-up,
+  scaled by the price and trimmed per caller; 4-bet the top 10% / 11% / 12% of that range. Targets: fold to
+  3-bet ~55% lowReg, ~50% midReg, ~45% toughReg. Fish keep their profile logic. Cold spots and 4-bets+ are
+  unchanged.
+- **Blind defense (regs):** when folded to a blind facing one raise, regs don't use the `vpip` threshold. They
+  continue with a share set by the opener's position and the price: toughReg BB folds ~55% vs UTG, ~37% vs
+  CO/BTN, ~30% vs SB (midReg ×0.95 and lowReg ×0.9 of its defense); the SB defends ~12% vs UTG to ~29% vs BTN.
+  Chart bots keep the chart's shape. Fish are unchanged.
+- **Heads-up:** the button (SB) opens ~82–87% (regs) and the BB defends ~70–75% vs its open. 3–9 handed opens
+  scale with players left to act, via positions named back from the button.
+- **What `vpip` means here:** the table's `vpip` is the target outside blind defense. Blind defense adds ~5–6pp,
+  so regs' overall VPIP runs ~29–30% in bot-only play. That's intended.
 - **Straddles and bounties:** see §14 and §15.
 - **Postflop:** estimate equity vs a uniform range narrowed by opponents' preflop actions (300 samples).
   Bet or raise for value when equity > 0.6. Bluff with probability `bluffFreq` when equity < 0.35. Call when
@@ -505,7 +517,8 @@ Note: <PROFITABILITY_DISCLAIMER>
   heads-up blind/button order, rake cap and no-flop-no-drop, chip conservation (Σ netChips + rake = 0),
   determinism by seed, and `getView` redaction.
 - Bots: every returned action is legal across 10k random seeded states. Tier stats converge within ±5 pp
-  of the profile over 5k simulated hands.
+  of the profile over 5k simulated hands, except reg VPIP, which may run up to +8pp over the profile because
+  of blind defense (§7). Blind-defense, heads-up and vs-3-bet fold rates are checked against the §7 targets.
 - Coach: known spots give the expected flag IDs. Equity comes within ±2 pp of exact enumeration.
 - Export: golden-text snapshots from fixed HandRecords.
 - Tracker: stats computed from fixture records, CI math, and profitability thresholds.
@@ -544,7 +557,8 @@ From `REQUESTS-claude.md` (2026-09-28). The sections named are updated to match.
     1M deals). Every other random consumer (bots, coach, all-in EV) likewise uses its own `deriveSeed` label.
 12. **Later owner decisions (2026-09-29):** midReg uses charts without mixing (§7 table); chart bots scale the
     chart to their profile (§7); the coach's equity stream is `deriveSeed(seed, 'coach')` (§8.1); `foldToBet`
-    joins StatsSummary (§9); straddles (§14) and bounties (§15) are added. Player bounties are deferred. Hand
+    joins StatsSummary (§9); straddles (§14) and bounties (§15) are added. §7's old vs-3-bet rule ("top 40% of
+    the threeBet range") was an error that made regs fold ~90%; replaced along with price-aware blind defense. Player bounties are deferred. Hand
     bounties exclude pocket pairs and default to 25% of hands, since at 5% they paid about once per 2,900 hands.
 
 ## 14. Straddles
@@ -564,7 +578,9 @@ From `REQUESTS-claude.md` (2026-09-28). The sections named are updated to match.
   `heroPosition` keeps the seat's normal label (e.g. `UTG`). `HeroStatFlags.straddled` / `facedStraddle`.
 - **Bots:** preflop the straddle is the effective big blind: opens are 2.5 (SB 3) effective blinds plus 1 per
   limper, 3-bets are 3×/4× the current bet, depth bands are read in effective blinds, and the straddler uses the
-  BB chart row for its option.
+  BB chart row for its option. The real BB uses the SB row (it has no 'open' row), and the SB keeps its row.
+  Folded to a blind facing only the straddle, regs continue ~60–72% (BB) / ~53–60% (SB), raising the top ~45%
+  of that and completing the rest.
 - **Export:** `posts straddle 2.0bb`.
 
 ## 15. Bounties
