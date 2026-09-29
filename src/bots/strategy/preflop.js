@@ -16,6 +16,9 @@ import { opponentRanges } from './ranges.js';
 import { openTo, threeBetTo, fourBetTo } from './sizing.js';
 import { TIER_STYLE, POSITION_WIDTH, PREFLOP_NOISE, POSTFLOP_NOISE } from './style.js';
 import { bountyPreflop } from './bounty.js';
+import {
+  blindDefenseTarget, headsUpOpenTarget, straddleFirstInTarget, STRADDLE_RAISE_SHARE,
+} from './blinds.js';
 
 /** A stack-off decision: the raise is at least this share of our chips for the street. */
 const COMMIT_SHARE = 0.35;
@@ -68,6 +71,30 @@ function scaled(range, factor, key) {
   });
 }
 
+/**
+ * A range covering `target` of all combos, shaped by `base`: the strongest part of `base` first, then
+ * (when `base` is too narrow) the next-strongest hands outside it. `exclude` (e.g. the 3-bet range)
+ * caps each class at 1 − its frequency there. Targets are snapped to 0.005 so the memo stays small;
+ * `key` must identify base and exclude.
+ */
+function fillRange(base, exclude, target, key) {
+  const t = Math.round(target * 200) / 200;
+  return memo(`f|${key}|${t}`, () => {
+    const room = (cls) => Math.max(0, 1 - (exclude?.[cls] ?? 0));
+    const out = {};
+    let cov = 0;
+    const add = (cls, cap) => {
+      const f = Math.min(cap, ((t - cov) * 1326) / comboCount(cls));
+      if (f <= 0) return;
+      out[cls] = (out[cls] ?? 0) + f;
+      cov += (f * comboCount(cls)) / 1326;
+    };
+    for (const cls of HAND_CLASSES) if (cov < t) add(cls, Math.min(base[cls] ?? 0, room(cls)));
+    for (const cls of HAND_CLASSES) if (cov < t) add(cls, room(cls) - (out[cls] ?? 0));
+    return out;
+  });
+}
+
 /** Tier-variant ordering for rule-based bots: 'open' (first-in, limped) or 'respond' (vs a raise). */
 function variantPercentiles(tier, position, band, kind, weight) {
   return memo(`v|${tier}|${position}|${band}|${kind}`, () => {
@@ -108,9 +135,9 @@ export function preflopDecision(view, profile, ctx, adj) {
   }
   const ip = info.raiserSeat === null ? true
     : postflopOrder(view).indexOf(view.seat) > postflopOrder(view).indexOf(info.raiserSeat);
-  const decision = profile.usesCharts
+  const decision = blindDecision(view, profile, ctx, adj, info, ip) ?? (profile.usesCharts
     ? chartDecision(view, profile, ctx, adj, info, ip)
-    : ruleDecision(view, profile, ctx, info, ip);
+    : ruleDecision(view, profile, ctx, info, ip));
   // A live bounty hand is played as at least a medium-strength hand (SPEC §15).
   if (decision.type !== 'fold' || !(legal.toCall > 0)) return decision;
   return bountyPreflop(view, profile, ctx.rng, info) ?? decision;
@@ -123,16 +150,101 @@ export function preflopDecision(view, profile, ctx, adj) {
  */
 export const CHART_BASE_RATES = Object.freeze({ pfr: 0.175, vpipGap: 0.075, threeBet: 0.06 });
 
-function chartDecision(view, profile, ctx, adj, info, ip) {
-  const { cls, position, band, spot, limpers } = info;
-  const key = `${profile.tier}|${position}|${band}`;
+/** Chart-bot range for (position, band, action), scaled to the profile (× `extra`), and its memo key. */
+function profileChart(profile, position, band, action, extra = 1) {
   const factor = {
     open: profile.pfr / CHART_BASE_RATES.pfr,
     call: Math.max(profile.vpip - profile.pfr, 0.01) / CHART_BASE_RATES.vpipGap,
     threeBet: profile.threeBet / CHART_BASE_RATES.threeBet,
+  }[action] * extra;
+  const key = `${profile.tier}|${position}|${band}|${action}`;
+  return {
+    range: scaled(getTierChartRange(profile.tier, position, band, action), factor, key),
+    key: `${key}|${Math.round(factor * 20) / 20}`,
   };
-  const chart = (action, extra = 1) =>
-    scaled(getTierChartRange(profile.tier, position, band, action), factor[action] * extra, `${key}|${action}`);
+}
+
+/** Noisy "percentile under threshold" for rule-based bots; noise scales with 1 − skill. */
+function noisyBelow(profile, rng) {
+  // Capping the noise half-width at the threshold (and 1 − threshold) keeps the expected rate at the
+  // threshold instead of inflating small ones like 3-bet%.
+  return (pct, threshold) => {
+    const a = Math.min((PREFLOP_NOISE / 2) * (1 - profile.skill), threshold, 1 - threshold);
+    return pct + (rng() * 2 - 1) * Math.max(a, 0) < threshold;
+  };
+}
+
+/**
+ * Reg blinds (blinds.js): the heads-up button's first-in open, the blinds folded to an unraised
+ * straddle, and blind defense against one raise, all sized by price and the opener's position.
+ * Chart bots keep their chart's shape; rule bots fill the target from their variant ordering.
+ * Returns null outside those spots (and for fish), leaving the normal chart / rule play.
+ */
+function blindDecision(view, profile, ctx, adj, info, ip) {
+  const { cls, position, band, spot, limpers, callers } = info;
+  if (position !== 'SB' && position !== 'BB') return null;
+  const below = noisyBelow(profile, ctx.rng);
+  const style = TIER_STYLE[profile.tier] ?? TIER_STYLE.lowReg;
+  const openPct = () => variantPercentiles(profile.tier, 'SB', band, 'open', style.chartWeight)[cls];
+  const sbOpen = () => ({
+    range: getTierChartRange(profile.tier, 'SB', band, 'open'), key: `${profile.tier}|SB|${band}|open`,
+  });
+
+  if (spot === 'unopened' && limpers === 0) {
+    const to = openTo('SB', 0, info.blind);
+    if (view.numPlayers === 2) {
+      const target = headsUpOpenTarget(profile, adj.openWider);
+      if (target === null) return null;
+      if (!profile.usesCharts) return below(openPct(), target) ? { type: 'raise', to } : { type: 'fold' };
+      const base = sbOpen();
+      const range = fillRange(base.range, null, target, base.key);
+      return choose([{ type: 'raise', to, f: range[cls] ?? 0 }], profile.mixing, ctx.rng);
+    }
+    const realBlind = view.position;
+    if (view.straddleSeat == null || view.seat === view.straddleSeat) return null;
+    const target = straddleFirstInTarget(view, profile, realBlind);
+    if (target === null) return null;
+    if (!profile.usesCharts) {
+      const pct = openPct();
+      if (below(pct, target.raise)) return { type: 'raise', to };
+      return below(pct, target.play) ? { type: 'call' } : { type: 'fold' };
+    }
+    const base = sbOpen();
+    const range = fillRange(base.range, null, target.play, base.key);
+    const within = percentileWithinRange(range, cls);
+    if (within === null) return { type: 'fold' };
+    const type = within < STRADDLE_RAISE_SHARE ? 'raise' : 'call';
+    return choose([{ type, to, f: range[cls] }], profile.mixing, ctx.rng);
+  }
+
+  if (spot !== 'raised') return null;
+  const target = blindDefenseTarget(view, profile, position, chartPosition(view, info.raiserSeat), callers);
+  if (target === null) return null;
+  if (!profile.usesCharts) {
+    const width = POSITION_WIDTH[position] ?? 1;
+    if (below(STRENGTH_PCT[cls], profile.threeBet * width * style.threeBetK)) {
+      return { type: 'raise', to: threeBetTo(view.currentBet, ip) };
+    }
+    const pct = variantPercentiles(profile.tier, position, band, 'respond', style.chartWeight)[cls];
+    return below(pct, target) ? { type: 'call' } : { type: 'fold' };
+  }
+  // 3-bet range as usual (capped at the whole defense), then calls fill the rest of the target
+  // from the call chart outward.
+  const tb = profileChart(profile, position, band, 'threeBet');
+  const threeBet = fillRange(tb.range, null, Math.min(target, rangeCoverage(tb.range)), tb.key);
+  const tbKey = `${tb.key}|${Math.round(Math.min(target, rangeCoverage(tb.range)) * 200)}`;
+  const callBase = getTierChartRange(profile.tier, position, band, 'call');
+  const call = fillRange(callBase, threeBet, Math.max(0, target - rangeCoverage(threeBet)),
+    `${profile.tier}|${position}|${band}|call|x${tbKey}`);
+  return choose([
+    { type: 'raise', to: threeBetTo(view.currentBet, ip), f: threeBet[cls] ?? 0 },
+    { type: 'call', f: call[cls] ?? 0 },
+  ], profile.mixing, ctx.rng);
+}
+
+function chartDecision(view, profile, ctx, adj, info, ip) {
+  const { cls, position, band, spot, limpers } = info;
+  const chart = (action, extra = 1) => profileChart(profile, position, band, action, extra).range;
   const heroLimped = preflopActions(view).get(view.heroSeat)?.limped === true;
   switch (spot) {
     case 'unopened':
@@ -173,12 +285,7 @@ function ruleDecision(view, profile, ctx, info, ip) {
   const { cls, position, band, spot, limpers } = info;
   const style = TIER_STYLE[profile.tier] ?? TIER_STYLE.lowReg;
   const width = POSITION_WIDTH[position] ?? 1;
-  // Noise scaled by 1 − skill. Capping its half-width at the threshold (and 1 − threshold) keeps
-  // the expected rate at the threshold instead of inflating small ones like 3-bet%.
-  const below = (pct, threshold) => {
-    const a = Math.min((PREFLOP_NOISE / 2) * (1 - profile.skill), threshold, 1 - threshold);
-    return pct + (ctx.rng() * 2 - 1) * Math.max(a, 0) < threshold;
-  };
+  const below = noisyBelow(profile, ctx.rng);
   const strength = STRENGTH_PCT[cls];
   switch (spot) {
     case 'unopened':

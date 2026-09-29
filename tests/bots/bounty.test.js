@@ -39,11 +39,21 @@ function fixedHand({ profiles, buttonSeat, heroSeat, bounties = [], holes, board
 const decide = (s, profile, seed) =>
   decideAction(getView(s, s.actingSeat), profile, { rng: createRng(seed), heroStats: null });
 
-// sha256 of 150 bot-played records from before bounties existed (commit c269744), new fields stripped.
-const PRE_BOUNTY_BOT_RECORDS = '7f76a65917cf8e4ef21d48e4d1f51c75a54bee51065a280f29fb64b62f208ffa';
+// sha256 of 150 bot-played records, new fields stripped. First pinned before bounties existed (commit
+// c269744, 7f76a659…); re-pinned when blind defense became price- and position-aware (a deliberate
+// strategy change, not a bounty one: the test below checks bounties-off play directly).
+const PRE_BOUNTY_BOT_RECORDS = 'c2c52d508482c3d074fc4b4ee1174cb46f30696e02bed1371ab62c2e4bbaba91';
 
 test('bounties off: bots play exactly as before bounties existed', () => {
   assert.equal(hashRecords(botPlayRecords()), PRE_BOUNTY_BOT_RECORDS);
+});
+
+test('bounties off: explicitly disabled bounty settings play exactly like no bounty option', () => {
+  const disabled = {
+    hand: { enabled: false, chance: 1, amountBb: 40 }, card: { enabled: false, chance: 1, amountBb: 40 },
+    paysOn: 'showdownOnly',
+  };
+  assert.equal(hashRecords(botPlayRecords({ to: 80, extra: { bounty: disabled } })), hashRecords(botPlayRecords({ to: 80 })));
 });
 
 test('bots always act legally with bounties live', () => {

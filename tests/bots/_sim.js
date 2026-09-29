@@ -71,26 +71,34 @@ function foldedPreflop(state, seat) {
 }
 
 /**
- * @param {{hands?: number, seed?: number, stakes?: string, pool?: Object, straddle?: Object, bounty?: Object}} opts
+ * @param {{hands?: number, seed?: number, stakes?: string, pool?: Object, straddle?: Object, bounty?: Object,
+ *   onDecision?: Function, players?: number}} opts
  *   pool defaults to an even mix of all four tiers so every tier gets a sample; pass stakes to use its
- *   default pool. straddle and bounty are passed to createScenario.
+ *   default pool. straddle and bounty are passed to createScenario. onDecision(view, profile, action) sees
+ *   every bot decision before it's applied. players keeps only scenarios with that many seats (redrawing seeds).
  * @returns {Object<string, Object>} per tier: observed rates and mean profile targets
  */
-export function simulateBotHands({ hands = 1000, seed = 1, stakes, pool, straddle, bounty } = {}) {
+export function simulateBotHands({ hands = 1000, seed = 1, stakes, pool, straddle, bounty, onDecision, players } = {}) {
   const tierPool = pool ? normalizePool(pool) : stakes ? poolForStakes(stakes) : UNIFORM_POOL;
   const session = createRng(seed);
   const tallies = Object.fromEntries(TIERS.map((t) => [t, emptyTally()]));
   for (let h = 0; h < hands; h++) {
-    const handSeed = Math.floor(session() * 4294967296);
-    const scenario = createScenario({ stakes: stakes ?? 'mid', seed: handSeed, createdAt: h, straddle, bounty },
-      createRng(handSeed));
+    let handSeed;
+    let scenario;
+    do {
+      handSeed = Math.floor(session() * 4294967296);
+      scenario = createScenario({ stakes: stakes ?? 'mid', seed: handSeed, createdAt: h, straddle, bounty },
+        createRng(handSeed));
+    } while (players && scenario.numPlayers !== players);
     const botRng = createRng(deriveSeed(handSeed, 'bots'));
     const profiles = scenario.seats.map(() => createBotProfile(sampleTier(tierPool, botRng), botRng));
     for (const seat of scenario.seats) seat.profile = seat.isHero ? null : profiles[seat.seat];
     let state = createHand(scenario);
     while (!isComplete(state)) {
       const seat = state.actingSeat;
-      const action = decideAction(getView(state, seat), profiles[seat], { rng: botRng, heroStats: null });
+      const view = getView(state, seat);
+      const action = decideAction(view, profiles[seat], { rng: botRng, heroStats: null });
+      onDecision?.(view, profiles[seat], action);
       state = applyAction(state, action);
     }
     tallyHand(state, profiles, tallies);

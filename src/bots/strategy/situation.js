@@ -11,9 +11,16 @@ export function effectiveBlind(view) {
   return Math.max(CHIPS_PER_BB, straddle?.amount ?? 0);
 }
 
-/** Position for charts: the straddler plays its option like the big blind. */
-export function chartPosition(view) {
-  return view.straddleSeat != null && view.straddleSeat === view.seat ? 'BB' : view.position;
+/**
+ * Position for charts. With a live straddle the blinds shift one role: the straddler plays its option
+ * like the big blind, and the BB, the last to act before it with half an effective blind posted,
+ * plays like the small blind (it has no 'open' chart row as the BB). The SB keeps its row.
+ */
+export function chartPosition(view, seat = view.seat) {
+  const position = view.players[seat]?.position ?? view.position;
+  if (view.straddleSeat == null) return position;
+  if (seat === view.straddleSeat) return 'BB';
+  return position === 'BB' ? 'SB' : position;
 }
 
 export function depthBand(effBb) {
