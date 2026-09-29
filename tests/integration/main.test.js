@@ -65,10 +65,23 @@ test('main wiring plays 50 random full hands with the available bots', async () 
 });
 
 for (const tier of TIERS) {
-  test(`main wiring completes hands against ${tier}`, async () => {
-    let seed = 2000;
-    const settings = { stakes: 'micro', poolOverride: Object.fromEntries(TIERS.map(key => [key, key === tier ? 1 : 0])) };
-    const app = await createApp(settings, { seedSource: () => seed++, delay: async () => {} });
+  for (const enabled of [false, true]) test(`main wiring completes ${tier} hands with straddles ${enabled ? 'on' : 'off'}`, async () => {
+    const settings = { stakes: 'micro', poolOverride: Object.fromEntries(TIERS.map(key => [key, key === tier ? 1 : 0])),
+      straddle: { enabled, heroChancePercent: 75 } };
+    // Exercise real native hero, bot and non-straddle scenarios for every tier,
+    // including tough regs whose natural straddle frequency is only 3%.
+    const seeds = [];
+    const counts = { hero: 0, bot: 0, none: 0 };
+    for (let seed = 1; seed < 10000 && seeds.length < 6; seed++) {
+      const scenario = engine.createScenario({ stakes: 'micro', poolOverride: settings.poolOverride,
+        seed, createdAt: 123456789, straddle: { enabled, heroChance: 0.75 } });
+      const kind = scenario.straddleSeat === null ? 'none' : scenario.straddleSeat === scenario.heroSeat ? 'hero' : 'bot';
+      if (!enabled || counts[kind] < 2) { seeds.push(seed); counts[kind]++; }
+    }
+    assert.equal(seeds.length, 6);
+    if (enabled) assert.deepEqual(counts, { hero: 2, bot: 2, none: 2 });
+    let index = 0;
+    const app = await createApp(settings, { seedSource: () => seeds[index++], delay: async () => {} });
     await app.session.ready;
     for (let hand = 0; hand < 6; hand++) {
       assert.ok(app.session.getState().players.filter(player => !player.isHero)
@@ -76,7 +89,21 @@ for (const tier of TIERS) {
       await finishHand(app.session);
       const state = app.session.getState();
       assert.equal(state.result.netChips.reduce((sum, n) => sum + n, 0) + state.result.rakeChips, 0);
-      assert.equal(app.session.getRecentHands()[0].id, state.handId);
+      const record = app.session.getRecentHands()[0];
+      assert.equal(record.id, state.handId);
+      const scenario = engine.createScenario({ stakes: 'micro', poolOverride: settings.poolOverride,
+        seed: state.seed, createdAt: record.timestamp, straddle: { enabled, heroChance: 0.75 } });
+      assert.equal(state.straddleSeat, scenario.straddleSeat);
+      assert.equal(record.straddleSeat, state.straddleSeat);
+      assert.equal(record.statFlags.straddled, state.straddleSeat === state.heroSeat);
+      assert.equal(record.statFlags.facedStraddle, state.straddleSeat !== null && state.straddleSeat !== state.heroSeat);
+      const posts = state.events.filter(event => event.type === 'postBlind');
+      assert.equal(posts.filter(event => event.blind === 'BB').length, 1);
+      assert.equal(posts.length, state.straddleSeat === null ? 2 : 3);
+      if (state.straddleSeat !== null) {
+        assert.deepEqual([posts[2].blind, posts[2].seat, posts[2].amount], ['straddle', state.straddleSeat, 200]);
+        assert.match(app.exporter.formatHand(record), /posts straddle 2.0bb/);
+      }
       if (hand < 5) await app.session.nextHand(settings);
     }
   });
@@ -116,6 +143,35 @@ test('session trusts native scenario timestamps/IDs and isolates profiles, timin
   assert.deepEqual(botDraws, botDraws.map(() => decisions()));
   const pacing = engine.createRng(engine.deriveSeed(seed, 'pacing'));
   assert.deepEqual(delays, delays.map(() => 400 + Math.floor(pacing() * 501)));
+});
+
+test('straddle percentage changes reach native scenario generation on the next hand', async () => {
+  const optionsSeen = [];
+  const wrappedEngine = { ...engine, createScenario(options) {
+    optionsSeen.push(options.straddle);
+    return engine.createScenario(options);
+  } };
+  let seed = 1000;
+  const settings = { stakes: 'micro', straddle: { enabled: true, heroChancePercent: 33 } };
+  const session = createEngineSession(wrappedEngine, placeholder, settings, {
+    seedSource: () => seed++, delay: async () => {},
+  });
+  await session.ready;
+  assert.deepEqual(optionsSeen, [{ enabled: true, heroChance: 0.33 }]);
+  for (const straddle of [
+    { enabled: true, heroChancePercent: 0 },
+    { enabled: true, heroChancePercent: 100 },
+    { enabled: false, heroChancePercent: 100 },
+  ]) {
+    await finishHand(session);
+    const next = { ...settings, straddle };
+    await session.nextHand(next);
+    assert.deepEqual(optionsSeen.at(-1), { enabled: straddle.enabled, heroChance: straddle.heroChancePercent / 100 });
+    const state = session.getState();
+    if (!straddle.enabled) assert.equal(state.straddleSeat, null);
+    else if (straddle.heroChancePercent === 0) assert.notEqual(state.straddleSeat, state.heroSeat);
+  }
+  await finishHand(session);
 });
 
 test('one hero-read accumulator observes every finished hand once and reaches tough-reg exploit threshold', async () => {

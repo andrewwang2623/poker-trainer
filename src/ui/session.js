@@ -1,5 +1,5 @@
 import { botActionDelay, normalizeBotSpeed } from './bot-speed.js';
-import { maybePostStraddle } from './straddle.js';
+import { normalizeStraddle } from './straddle-settings.js';
 
 const randomWord = () => globalThis.crypto.getRandomValues(new Uint32Array(1))[0];
 
@@ -38,9 +38,11 @@ export function createEngineSession(engine, bots, initialSettings = {}, options 
   function startHand() {
     const seed = freshSeed();
     createdAt = now();
+    const straddle = normalizeStraddle(settings.straddle);
     const scenario = engine.createScenario({
       stakes: settings.stakes ?? 'micro', poolOverride: settings.poolOverride ?? undefined,
       seed, createdAt,
+      straddle: { enabled: straddle.enabled, heroChance: straddle.heroChancePercent / 100 },
     });
     const profileRng = engine.createRng(engine.deriveSeed(seed, 'profiles'));
     scenario.seats = scenario.seats.map(seat => ({
@@ -48,7 +50,6 @@ export function createEngineSession(engine, bots, initialSettings = {}, options 
       profile: seat.isHero ? null : bots.createBotProfile(seat.tier, profileRng),
     }));
     state = engine.createHand(scenario);
-    state = maybePostStraddle(state, settings.straddle, engine.createRng(engine.deriveSeed(seed, 'straddle')));
     botRng = engine.createRng(engine.deriveSeed(seed, 'bots'));
     pacingRng = engine.createRng(engine.deriveSeed(seed, 'pacing'));
     recorded = false;

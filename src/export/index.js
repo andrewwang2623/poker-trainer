@@ -47,10 +47,7 @@ function handBlock(record, index, count, { hideOpponentCards = false, explain, r
     const actions = [];
     for (const event of events) {
       if (event.type === 'postBlind') {
-        // Compatibility with the UI's live-straddle adapter (REQUESTS-astra.md).
-        const straddle = record.numPlayers >= 3 && event.blind === 'BB' &&
-          event.seat === (record.buttonSeat + 3) % record.numPlayers && event.amount === 2 * CHIPS_PER_BB;
-        actions.push(`${actor(event.seat, street)} posts ${straddle ? 'straddle' : event.blind} ${chips(event.amount)}`);
+        actions.push(`${actor(event.seat, street)} posts ${event.blind} ${chips(event.amount)}`);
         pot += event.amount;
       } else if (event.type === 'action') {
         actions.push(`${actor(event.seat, street)} ${actionText(event)}`);

@@ -8,7 +8,7 @@ import { renderLog } from './log.js';
 import { renderSettings } from './settings.js';
 import { applyAppearance, loadAppearance, saveAppearance } from './appearance.js';
 import { createExportPanel } from './export.js';
-import { loadStraddle, normalizeStraddle, saveStraddle } from './straddle.js';
+import { loadStraddle, normalizeStraddle, saveStraddle } from './straddle-settings.js';
 import { loadBotPacing, loadBotSpeed, loadOutBotSpeed, normalizeBotSpeed, saveBotPacing, saveBotSpeed, saveOutBotSpeed } from './bot-speed.js';
 
 /** Mounts the table UI against a session adapter exposing state, legal actions, act and nextHand. */
@@ -114,7 +114,7 @@ export function mountApp(rootEl, app = {}) {
     right.append(renderLog(state), renderSettings(settings, next => {
       const stakeChanged = next.stakes !== settings.stakes;
       if (next.straddle?.enabled !== settings.straddle.enabled ||
-          next.straddle?.chancePercent !== settings.straddle.chancePercent) {
+          next.straddle?.heroChancePercent !== settings.straddle.heroChancePercent) {
         next.straddle = normalizeStraddle(next.straddle);
         saveStraddle(next.straddle);
       }

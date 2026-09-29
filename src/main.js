@@ -1,7 +1,7 @@
 import { mountApp } from './ui/index.js';
 import { createEngineSession } from './ui/session.js';
 import { loadBotPacing, loadBotSpeed, loadOutBotSpeed, normalizeBotSpeed } from './ui/bot-speed.js';
-import { loadStraddle, normalizeStraddle } from './ui/straddle.js';
+import { loadStraddle, normalizeStraddle } from './ui/straddle-settings.js';
 
 const load = path => import(path).catch(() => null);
 
