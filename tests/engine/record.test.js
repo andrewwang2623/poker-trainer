@@ -36,6 +36,7 @@ test('hero as preflop raiser: vpip/pfr, c-bet, postflop counts, decisions', () =
     cbetOpp: true, cbet: true, foldToCbetOpp: false, foldToCbet: false,
     sawFlop: true, wentToShowdown: true, wonAtShowdown: true,
     postflopBets: 1, postflopRaises: 1, postflopCalls: 0,
+    straddled: false, facedStraddle: false,
   });
 
   // Pot: 250 + 40 + 250 = 540, then 600 on the flop, 3000 on the turn = 4140. Rake 5% = 207.

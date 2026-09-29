@@ -32,6 +32,7 @@ export function buildHandRecord(state, { sessionId, timestamp } = {}) {
     heroSeat,
     heroPosition: state.players[heroSeat].position,
     buttonSeat: state.buttonSeat,
+    straddleSeat: state.straddleSeat ?? null,
     players: state.players.map((p) => ({
       seat: p.seat,
       name: p.name,
@@ -75,6 +76,8 @@ function replay(state) {
     cbetOpp: false, cbet: false, foldToCbetOpp: false, foldToCbet: false,
     sawFlop: false, wentToShowdown: false, wonAtShowdown: false,
     postflopBets: 0, postflopRaises: 0, postflopCalls: 0,
+    // The straddle is a forced post: it never counts toward vpip/pfr or as a raise.
+    straddled: false, facedStraddle: false,
   };
   const decisions = [];
   // Postflop order index: 0 = first to act (left of the button).
@@ -85,6 +88,10 @@ function replay(state) {
       case 'postBlind':
         stacks[e.seat] -= e.amount;
         committed[e.seat] += e.amount;
+        if (e.blind === 'straddle') {
+          if (e.seat === hero) flags.straddled = true;
+          else flags.facedStraddle = true;
+        }
         break;
       case 'board':
         if (e.street === 'flop' && !folded[hero]) flags.sawFlop = true;

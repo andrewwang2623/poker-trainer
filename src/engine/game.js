@@ -6,7 +6,7 @@ import {
 } from '../shared/schemas.js';
 import { createRng, deriveSeed } from './rng.js';
 import { sha256Hex } from './sha256.js';
-import { isValidCreatedAt } from './scenario.js';
+import { isValidCreatedAt, straddlePosition, STRADDLE_CHIPS } from './scenario.js';
 import { fullDeck, shuffle, cardCode, isValidCard } from './cards.js';
 import { evaluateCodes, scoreLabel } from './evaluator.js';
 import { forEachRunout } from './equity.js';
@@ -48,10 +48,20 @@ function validateScenario(sc) {
     seen.add(s.seat);
     if (!Number.isInteger(s.stack) || s.stack <= 0) throw new RangeError(`seat ${s.seat}: stack must be a positive integer`);
   }
+  const straddleSeat = sc.straddleSeat ?? null;
+  if (straddleSeat !== null) {
+    if (straddleSeat !== straddlePosition(n, sc.buttonSeat)) {
+      throw new RangeError('straddleSeat must be the first seat after the BB at a 3+ player table');
+    }
+    if (sc.seats.find((s) => s.seat === straddleSeat).stack <= STRADDLE_CHIPS) {
+      throw new RangeError('straddleSeat needs a stack above 2bb');
+    }
+  }
 }
 
 /**
- * Build a new hand: shuffle with rng(deriveSeed(seed, 'deck')), post blinds, deal hole cards.
+ * Build a new hand: shuffle with rng(deriveSeed(seed, 'deck')), post blinds (and the live 2bb
+ * straddle when scenario.straddleSeat is set), deal hole cards.
  * @param {import('../shared/schemas.js').ScenarioConfig} scenario
  * @param {{cards?: {holes?: Object<number, string[]>, board?: string[]}}} [opts]
  *   `cards` presets specific hole cards and/or the first board cards (tests and replays).
@@ -99,6 +109,7 @@ export function createHand(scenario, opts = {}) {
     };
   });
 
+  const straddleSeat = scenario.straddleSeat ?? null;
   const s = {
     schemaVersion: SCHEMA_VERSION,
     handId: makeHandId(scenario.createdAt, scenario.seed),
@@ -109,6 +120,7 @@ export function createHand(scenario, opts = {}) {
     sbSeat,
     bbSeat,
     heroSeat: scenario.heroSeat,
+    straddleSeat,
     players,
     street: 'preflop',
     board: [],
@@ -123,13 +135,17 @@ export function createHand(scenario, opts = {}) {
     result: null,
   };
 
-  for (const [seat, blind, size] of [[sbSeat, 'SB', stakes.sbChips], [bbSeat, 'BB', BB]]) {
+  const posts = [[sbSeat, 'SB', stakes.sbChips], [bbSeat, 'BB', BB]];
+  // A live straddle is a third blind: it sets the bet to 2bb and the min raise to 4bb.
+  if (straddleSeat !== null) posts.push([straddleSeat, 'straddle', STRADDLE_CHIPS]);
+  for (const [seat, blind, size] of posts) {
     const p = players[seat];
     const amount = Math.min(size, p.stack);
     commit(p, amount);
     pushEvent(s, { type: 'postBlind', street: 'preflop', seat, blind, amount });
   }
-  s.currentBet = Math.max(players[sbSeat].committedStreet, players[bbSeat].committedStreet);
+  s.currentBet = Math.max(...posts.map(([seat]) => players[seat].committedStreet));
+  if (straddleSeat !== null) s.lastRaiseSize = STRADDLE_CHIPS;
 
   // Deal one card at a time, starting left of the button (the SB).
   const dealOrder = Array.from({ length: n }, (_, i) => (sbSeat + i) % n);
@@ -146,7 +162,8 @@ export function createHand(scenario, opts = {}) {
   }
   s.deck = [...presetBoard, ...deck];
 
-  progress(s, bbSeat);
+  // Action starts left of the last live blind; the straddler (like the BB) keeps its option.
+  progress(s, straddleSeat ?? bbSeat);
   return s;
 }
 
