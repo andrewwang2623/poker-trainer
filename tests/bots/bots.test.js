@@ -250,13 +250,15 @@ test('stakes-to-pool mapping follows STAKES and the settings override', () => {
   for (const t of TIERS) assert.ok(Math.abs(counts[t] / 20000 - pool[t]) < 0.015, `${t}: ${counts[t]}`);
 });
 
-test('createHeroReads summarizes hero hands, including fold-to-bet', () => {
+test('createHeroReads summarizes hero hands, including per-hand fold-to-bet (SPEC §9)', () => {
   const reads = createHeroReads();
+  const legacy = createHeroReads();
   assert.equal(reads.summary().hands, 0);
   assert.equal(reads.summary().vpip, null);
   let vpip = 0;
   let facing = 0;
   let folds = 0;
+  let multi = 0;
   for (let seed = 1; seed <= 80; seed++) {
     const rng = createRng(seed);
     const scenario = createScenario({ stakes: 'low', seed, createdAt: seed }, rng);
@@ -273,13 +275,17 @@ test('createHeroReads summarizes hero hands, including fold-to-bet', () => {
     }
     const record = buildHandRecord(s, { sessionId: 't', timestamp: seed });
     reads.observe(record);
+    // Records from before the per-hand flags existed give the same reads.
+    const { facedPostflopBet, foldedToPostflopBet, ...oldFlags } = record.statFlags;
+    legacy.observe({ ...record, statFlags: oldFlags });
     if (record.statFlags.vpip) vpip++;
-    for (const e of record.events) {
-      if (e.type === 'action' && e.seat === s.heroSeat && e.street !== 'preflop' && e.toCall > 0) {
-        facing++;
-        if (e.action === 'fold') folds++;
-      }
-    }
+    // Opportunities are hands, not decisions: hero may face several bets in one hand.
+    const faced = record.events.filter((e) =>
+      e.type === 'action' && e.seat === s.heroSeat && e.street !== 'preflop' && e.toCall > 0);
+    assert.equal(record.statFlags.facedPostflopBet, faced.length > 0);
+    if (faced.length) facing++;
+    if (faced.some((e) => e.action === 'fold')) folds++;
+    if (faced.length > 1) multi++;
   }
   const sum = reads.summary();
   assert.equal(sum.hands, 80);
@@ -287,6 +293,8 @@ test('createHeroReads summarizes hero hands, including fold-to-bet', () => {
   assert.ok(facing > 0);
   assert.equal(sum.foldToBet, folds / facing);
   assert.equal(sum.opportunities.foldToBet, facing);
+  assert.ok(multi > 0, 'some hands face more than one postflop bet');
+  assert.deepEqual(legacy.summary(), sum);
 });
 
 test('bots act legally in straddled pots', () => {

@@ -1,6 +1,6 @@
 // Session reads on hero, for exploiting bots when the tracker isn't wired. Feed it each finished
 // HandRecord; summary() returns the StatsSummary fields the exploits use, plus `foldToBet`
-// (hero's fold rate facing any postflop bet or raise), for BotContext.heroStats.
+// (SPEC §9: hands hero folded to a postflop bet or raise / hands hero faced one), for BotContext.heroStats.
 
 /**
  * @returns {{observe(record: import('../shared/schemas.js').HandRecord): void, summary(): Object}}
@@ -30,11 +30,9 @@ export function createHeroReads() {
       n.bets += f.postflopBets;
       n.raises += f.postflopRaises;
       n.calls += f.postflopCalls;
-      for (const e of record.events) {
-        if (e.type !== 'action' || e.seat !== record.heroSeat || e.street === 'preflop' || !(e.toCall > 0)) continue;
-        n.facingBet++;
-        if (e.action === 'fold') n.foldedToBet++;
-      }
+      const { faced, folded } = postflopBetFlags(record);
+      if (faced) n.facingBet++;
+      if (folded) n.foldedToBet++;
     },
     summary() {
       const rate = (x, d) => (d > 0 ? x / d : null);
@@ -57,4 +55,18 @@ export function createHeroReads() {
       };
     },
   };
+}
+
+/**
+ * Per-hand fold-to-bet flags: HeroStatFlags.facedPostflopBet / foldedToPostflopBet, derived from
+ * hero's postflop actions for records made before those flags existed.
+ */
+function postflopBetFlags(record) {
+  const f = record.statFlags;
+  if (typeof f.facedPostflopBet === 'boolean') {
+    return { faced: f.facedPostflopBet, folded: f.foldedToPostflopBet === true };
+  }
+  const facing = record.events.filter((e) => e.type === 'action' && e.seat === record.heroSeat &&
+    e.street !== 'preflop' && e.toCall > 0);
+  return { faced: facing.length > 0, folded: facing.some((e) => e.action === 'fold') };
 }
