@@ -1,5 +1,6 @@
 import { STAKES, TIER_LABELS, TIERS } from '../shared/schemas.js';
 import { element } from './dom.js';
+import { LOOKS, TEXT_SIZES, THEMES } from './appearance.js';
 
 function percentages(pool) {
   const whole = TIERS.map(tier => Math.round((pool[tier] ?? 0) * 100));
@@ -25,11 +26,11 @@ function setMixValue(current, chosen, target) {
   return next;
 }
 
-export function renderSettings(settings, onChange) {
+export function renderSettings(settings, onChange, appearance, onAppearanceChange) {
   const section = element('section', 'panel settings-panel');
   section.setAttribute('aria-labelledby', 'settings-title');
   const heading = element('div', 'panel-heading');
-  heading.append(element('h2', '', 'Table settings'), element('span', 'panel-note', 'Applies next hand'));
+  heading.append(element('h2', '', 'Table settings'), element('span', 'panel-note', 'Stakes apply next hand'));
   heading.querySelector('h2').id = 'settings-title';
   section.append(heading);
 
@@ -90,5 +91,37 @@ export function renderSettings(settings, onChange) {
     onChange({ ...settings, poolOverride: override });
   });
   section.append(mix);
+
+  const appearanceSection = element('div', 'appearance-settings');
+  appearanceSection.append(element('h3', '', 'Appearance'));
+  const looksLabel = element('span', 'field-label', 'Suggested looks');
+  const looks = element('div', 'look-row');
+  for (const look of LOOKS) {
+    const button = element('button', 'look-button', look.label);
+    button.type = 'button';
+    button.dataset.theme = look.theme;
+    button.setAttribute('aria-pressed', String(look.theme === appearance.theme && look.textSize === appearance.textSize));
+    button.addEventListener('click', () => onAppearanceChange({ theme: look.theme, textSize: look.textSize }));
+    looks.append(button);
+  }
+  appearanceSection.append(looksLabel, looks);
+
+  for (const [key, title, options] of [
+    ['theme', 'Background color', THEMES], ['textSize', 'Text size', TEXT_SIZES],
+  ]) {
+    const label = element('label', 'field-label', title);
+    const select = element('select', 'select-input');
+    select.id = `appearance-${key}`;
+    label.htmlFor = select.id;
+    for (const option of options) {
+      const node = element('option', '', option.label);
+      node.value = option.id;
+      select.append(node);
+    }
+    select.value = appearance[key];
+    select.addEventListener('change', () => onAppearanceChange({ ...appearance, [key]: select.value }));
+    appearanceSection.append(label, select);
+  }
+  section.append(appearanceSection);
   return section;
 }

@@ -5,10 +5,13 @@ import { renderTable } from './table.js';
 import { renderControls } from './controls.js';
 import { renderLog } from './log.js';
 import { renderSettings } from './settings.js';
+import { applyAppearance, loadAppearance, saveAppearance } from './appearance.js';
 
 /** Mounts the table UI against a session adapter exposing state, legal actions, act and nextHand. */
 export function mountApp(rootEl, app = {}) {
   let settings = { stakes: 'micro', poolOverride: null, ...app.settings };
+  let appearance = loadAppearance();
+  applyAppearance(appearance);
   const session = app.session ?? createMockSession(settings);
   let busy = false;
   let error = '';
@@ -42,6 +45,11 @@ export function mountApp(rootEl, app = {}) {
       Object.assign(settings, next);
       app.settings = settings;
       if (stakeChanged) render();
+    }, appearance, next => {
+      appearance = next;
+      applyAppearance(appearance);
+      saveAppearance(appearance);
+      render();
     }));
     const coachPanel = element('section', 'panel coach-panel');
     coachPanel.id = 'coach-feedback';
