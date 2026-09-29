@@ -2,14 +2,29 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { createApp } from '../../src/main.js';
+import * as engine from '../../src/engine/index.js';
+import * as bots from '../../src/bots/index.js';
+import * as placeholder from '../../src/bots/placeholder.js';
+import { TIERS } from '../../src/shared/schemas.js';
+import { createEngineSession } from '../../src/ui/session.js';
+
+async function finishHand(session, fold = false) {
+  let decisions = 0;
+  while (!engine.isComplete(session.getState())) {
+    assert.ok(++decisions < 200, 'hand must finish');
+    const legal = session.getLegalActions();
+    assert.ok(legal);
+    await session.act({ type: legal.types.includes('check') ? 'check'
+      : fold && legal.types.includes('fold') ? 'fold' : 'call' });
+  }
+}
 
 test('main wiring plays 50 random full hands with the available bots', async () => {
   let nextSeed = 1000;
   const app = await createApp({ stakes: 'micro', poolOverride: null }, {
     seedSource: () => nextSeed++, delay: async () => {},
   });
-  const realBots = await import('../../src/bots/index.js').catch(() => null);
-  assert.equal(app.features.realBots, Boolean(realBots?.decideAction && realBots?.createBotProfile));
+  assert.equal(app.features.realBots, true);
   assert.equal(app.session.getState().handId.startsWith('mock-'), false);
   await app.session.ready;
 
@@ -47,4 +62,106 @@ test('main wiring plays 50 random full hands with the available bots', async () 
   assert.ok(showdowns > 0);
   assert.equal(app.session.getRecentHands().length, 10);
   assert.equal(app.session.getState().stakes, 'high');
+});
+
+for (const tier of TIERS) {
+  test(`main wiring completes hands against ${tier}`, async () => {
+    let seed = 2000;
+    const settings = { stakes: 'micro', poolOverride: Object.fromEntries(TIERS.map(key => [key, key === tier ? 1 : 0])) };
+    const app = await createApp(settings, { seedSource: () => seed++, delay: async () => {} });
+    await app.session.ready;
+    for (let hand = 0; hand < 6; hand++) {
+      assert.ok(app.session.getState().players.filter(player => !player.isHero)
+        .every(player => player.profile.tier === tier));
+      await finishHand(app.session);
+      const state = app.session.getState();
+      assert.equal(state.result.netChips.reduce((sum, n) => sum + n, 0) + state.result.rakeChips, 0);
+      assert.equal(app.session.getRecentHands()[0].id, state.handId);
+      if (hand < 5) await app.session.nextHand(settings);
+    }
+  });
+}
+
+test('session trusts native scenario timestamps/IDs and isolates profiles, timing, and bot randomness', async () => {
+  const seed = 1234;
+  const createdAt = 1790000000000;
+  const nativeScenario = engine.createScenario({ stakes: 'micro', seed, createdAt });
+  const profiles = engine.createRng(engine.deriveSeed(seed, 'profiles'));
+  nativeScenario.seats = nativeScenario.seats.map(seat => ({ ...seat,
+    profile: seat.isHero ? null : bots.createBotProfile(seat.tier, profiles) }));
+  const expected = engine.createHand(nativeScenario);
+  let original;
+  const botDraws = [];
+  const delays = [];
+  const wrappedEngine = { ...engine,
+    createScenario(...args) {
+      assert.equal(args.length, 1, 'scenario owns its RNG');
+      return engine.createScenario(...args);
+    },
+    createHand(config) { original = engine.createHand(config); return original; },
+  };
+  const wrappedBots = { ...placeholder, decideAction(view, profile, ctx) {
+    botDraws.push(ctx.rng());
+    return placeholder.decideAction(view, profile, ctx);
+  } };
+  const session = createEngineSession(wrappedEngine, wrappedBots, { stakes: 'micro' }, {
+    seedSource: () => seed, now: () => createdAt, delay: async ms => { delays.push(ms); },
+  });
+  assert.equal(session.getState(), original, 'session must not rewrite the engine hand');
+  assert.deepEqual(original, expected);
+  await session.ready;
+  await finishHand(session);
+  const decisions = engine.createRng(engine.deriveSeed(seed, 'bots'));
+  assert.ok(botDraws.length > 0);
+  assert.deepEqual(botDraws, botDraws.map(() => decisions()));
+  const pacing = engine.createRng(engine.deriveSeed(seed, 'pacing'));
+  assert.deepEqual(delays, delays.map(() => 400 + Math.floor(pacing() * 501)));
+});
+
+test('one hero-read accumulator observes every finished hand once and reaches tough-reg exploit threshold', async () => {
+  let instances = 0;
+  const observed = [];
+  const contexts = [];
+  const wrappedBots = { ...bots,
+    createHeroReads() {
+      instances++;
+      const reads = bots.createHeroReads();
+      return { summary: () => reads.summary(), observe(record) {
+        assert.equal(record.coach, null, 'observe immediately after record construction');
+        observed.push(record.id);
+        reads.observe(record);
+      } };
+    },
+    decideAction(view, profile, ctx) {
+      assert.equal(profile.tier, 'toughReg');
+      assert.equal(ctx.heroStats.hands, observed.length);
+      contexts.push(ctx.heroStats.hands);
+      assert.ok('foldToBet' in ctx.heroStats);
+      return bots.decideAction(view, profile, ctx);
+    },
+  };
+  let seed = 4000;
+  const settings = { stakes: 'micro', poolOverride: { toughReg: 1 } };
+  const session = createEngineSession(engine, wrappedBots, settings, {
+    seedSource: () => seed++, delay: async () => {},
+  });
+  await session.ready;
+  for (let hand = 0; hand < 32; hand++) {
+    await finishHand(session, true);
+    assert.equal(observed.length, hand + 1);
+    if (hand < 31) await session.nextHand(settings);
+  }
+  assert.equal(instances, 1);
+  assert.equal(new Set(observed).size, 32);
+  assert.ok(contexts.includes(0));
+  assert.ok(contexts.includes(30));
+  assert.equal(session.getRecentHands().length, 10, 'reads span beyond the export buffer');
+  let newSessionHands;
+  const fresh = createEngineSession(engine, { ...bots, decideAction(view, profile, ctx) {
+    newSessionHands = ctx.heroStats.hands;
+    return placeholder.decideAction(view, profile, ctx);
+  } }, settings, { seedSource: () => 4000, delay: async () => {} });
+  await fresh.ready;
+  await finishHand(fresh);
+  assert.equal(newSessionHands, 0, 'a new session starts fresh');
 });

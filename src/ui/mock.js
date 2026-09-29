@@ -20,9 +20,9 @@ function profile(seat, tier) {
     bluffFreq: tier === 'fish' ? 0.1 : 0.23,
     foldToBet: tier === 'fish' ? 0.28 : 0.44,
     skill: tier === 'fish' ? 0.2 : 0.6,
-    usesCharts: tier === 'toughReg',
+    usesCharts: tier === 'midReg' || tier === 'toughReg',
     textureSizing: tier === 'midReg' || tier === 'toughReg',
-    mixing: tier === 'midReg' || tier === 'toughReg',
+    mixing: tier === 'toughReg',
     exploitsHero: tier === 'toughReg',
   };
 }
