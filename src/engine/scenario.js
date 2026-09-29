@@ -15,7 +15,8 @@ export function normalizePool(pool, fallback) {
   return Object.fromEntries(TIERS.map((t, i) => [t, weights[i] / sum]));
 }
 
-function sampleTier(pool, rng) {
+/** Draw a tier from a normalized pool. */
+export function sampleTier(pool, rng) {
   let x = rng();
   for (const t of TIERS) {
     x -= pool[t];

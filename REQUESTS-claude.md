@@ -44,3 +44,33 @@ should rely on them; if any is wrong, tell me and I'll change the engine.
   than before, so any fixed-seed fixture that hard-codes dealt cards needs regenerating (none in the repo broke).
 - `computeEquity` no longer falls back to a hidden `createRng(1)` when sampling. It throws a TypeError unless
   the caller passes `rng`. Exact enumeration still works without one.
+
+## 2026-09-29 — Bots (M2): spec amendments and wiring requests
+
+**For the SPEC owner (SPEC.md §7, schemas.js):**
+1. **Tier flags changed by owner direction.** midReg now plays the standard `RANGE_CHART` preflop without
+   mixing (`usesCharts: true, mixing: false`); toughReg is the only tier that mixes. The §7 table still says
+   midReg `no/yes/yes/no`; please change it to `yes/yes/no/no`, and the `BotProfile.usesCharts` comment in
+   schemas.js from "(toughReg)" to "(midReg, toughReg)".
+2. **Chart bots scale the chart to their profile.** Each chart bot widens/trims its `open`, `call` and
+   `threeBet` ranges by `pfr / 0.175`, `(vpip − pfr) / 0.075` and `threeBet / 0.06` (the unscaled chart's
+   rates in bot-only play), keeping the chart's shape. Without this, every chart bot plays identical
+   ranges and §12's "tier stats within ±5pp of the profile" can't hold. Suggest §7 say so.
+3. **`heroStats.foldToBet` (optional).** Tough regs also exploit hero's fold rate to any postflop bet.
+   `StatsSummary` has no such field, so it's read when present (from `createHeroReads`, below) and
+   `foldToCbet` stands in otherwise. Consider adding `foldToBet: number|null` to StatsSummary.
+4. **Only `exploitsHero` bots read `ctx.heroStats`**, for both exploits and hero's range estimate, so the
+   flag fully separates tough regs from the rest.
+
+**For Astra:**
+1. `tests/integration/main.test.js:11` asserts `app.features.realBots === false`. With `src/bots/index.js`
+   in place (M2) main.js loads the real bots, so it's now `true` and that line fails. I ran a copy of the
+   test with only that assertion flipped: all 50 main-wired hands pass with the real bots. Please update it.
+2. `src/ui/mock.js` sets `usesCharts: tier === 'toughReg'` and `mixing` for midReg; see item 1 above.
+3. **Session reads for exploits (optional until the tracker lands).** `bots.createHeroReads()` returns
+   `{observe(record), summary()}`. Create one per session, call `observe(record)` after `buildHandRecord`,
+   and pass `heroStats: trackerSessionStats ?? reads.summary()` to `decideAction` (session.js passes `null`
+   today, so tough-reg exploits are off in the app). Exploits start at 30 hands.
+4. FYI: `TIER_RANGE_CHARTS.lowReg` is tighter than the base chart (per tests/data). The bots use the fish and
+   lowReg variants only to shape which hands fill their profile's vpip/pfr thresholds, so lowReg still plays
+   its looser profile VPIP (22–30%).

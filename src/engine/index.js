@@ -5,7 +5,7 @@ export {
 } from './cards.js';
 export { evaluate, evaluateCodes, scoreLabel, scoreCategory, HAND_CATEGORIES } from './evaluator.js';
 export { computeEquity, forEachRunout } from './equity.js';
-export { createScenario, normalizePool } from './scenario.js';
+export { createScenario, normalizePool, sampleTier } from './scenario.js';
 export {
   createHand, getLegalActions, applyAction, getView, isComplete, buildPots,
 } from './game.js';

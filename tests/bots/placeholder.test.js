@@ -23,9 +23,9 @@ test('createBotProfile samples inside the tier ranges', () => {
         assert.ok(p[f] >= lo && p[f] <= hi, `${tier}.${f} = ${p[f]}`);
       }
       assert.ok(p.pfr <= p.vpip && p.threeBet <= p.pfr);
-      assert.equal(p.usesCharts, tier === 'toughReg');
+      assert.equal(p.usesCharts, tier === 'midReg' || tier === 'toughReg');
       assert.equal(p.exploitsHero, tier === 'toughReg');
-      assert.equal(p.mixing, tier === 'midReg' || tier === 'toughReg');
+      assert.equal(p.mixing, tier === 'toughReg');
       assert.equal(p.textureSizing, tier === 'midReg' || tier === 'toughReg');
     }
   }

@@ -1,4 +1,6 @@
 // Bot tiers (SPEC §7): parameter ranges sampled uniformly per bot, plus names and avatars.
+// midReg plays the standard charts without mixing (owner decision; SPEC §7 table lists the reverse,
+// see REQUESTS-claude.md). toughReg is the only tier that mixes.
 import { TIERS } from '../shared/schemas.js';
 
 export const TIER_RANGES = Object.freeze({
@@ -15,7 +17,7 @@ export const TIER_RANGES = Object.freeze({
   midReg: {
     vpip: [0.20, 0.26], pfr: [0.17, 0.22], threeBet: [0.07, 0.10], aggression: [2.5, 3.2],
     bluffFreq: [0.25, 0.33], foldToBet: [0.40, 0.48], skill: [0.60, 0.75],
-    usesCharts: false, textureSizing: true, mixing: true, exploitsHero: false,
+    usesCharts: true, textureSizing: true, mixing: false, exploitsHero: false,
   },
   toughReg: {
     vpip: [0.21, 0.26], pfr: [0.18, 0.23], threeBet: [0.08, 0.12], aggression: [2.8, 3.5],
