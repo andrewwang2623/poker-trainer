@@ -35,6 +35,7 @@ test('hero as preflop raiser: vpip/pfr, c-bet, postflop counts, decisions', () =
     vpip: true, pfr: true, threeBetOpp: false, threeBet: false,
     cbetOpp: true, cbet: true, foldToCbetOpp: false, foldToCbet: false,
     sawFlop: true, wentToShowdown: true, wonAtShowdown: true,
+    facedPostflopBet: true, foldedToPostflopBet: false,
     postflopBets: 1, postflopRaises: 1, postflopCalls: 0,
     straddled: false, facedStraddle: false,
   });
@@ -81,6 +82,8 @@ test('hero in the BB: 3-bet opportunity, fold to c-bet', () => {
   assert.equal(f.cbetOpp, false);
   assert.equal(f.foldToCbetOpp, true);
   assert.equal(f.foldToCbet, true);
+  assert.equal(f.facedPostflopBet, true);
+  assert.equal(f.foldedToPostflopBet, true);
   assert.equal(f.sawFlop, true);
   assert.equal(f.wentToShowdown, false);
   assert.equal(rec.heroNetBb, -2.5);

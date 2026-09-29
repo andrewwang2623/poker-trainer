@@ -115,3 +115,34 @@ should rely on them; if any is wrong, tell me and I'll change the engine.
    settings need.
 3. Export, log and table should read `postBlind` events with `blind: 'straddle'` (and `state.straddleSeat` /
    `record.straddleSeat` for the badge). Any seat can now straddle, not just hero.
+
+## 2026-09-29 — Bounties (SPEC §15; engine and bots implemented)
+
+**For Astra:**
+1. **Settings.** Per bounty type (hand, card): **on/off**, **frequency %** (0–100, default 5) and **amount in
+   bb** (default 2). One global **pays on** choice: "showdown or fold" (default) / "showdown only". Pass them
+   to `engine.createScenario({…, bounty})` as
+   `{hand: {enabled, chance: percent / 100, amountBb}, card: {enabled, chance: percent / 100, amountBb}, paysOn}`.
+   Missing parts fall back to `BOUNTY_DEFAULTS`; bad values throw `RangeError`. Omitting `bounty` (as today)
+   means no bounties, and records are byte-for-byte what they were before.
+2. **Show live bounties on the table before the deal.** `state.bounties` / `view.bounties` is public from
+   `createHand` on: `[{type: 'hand'|'card', target: 'J4o'|'4c', amountChips, paysOn}]`, hand first. Something
+   like "Bounty: J4o · 2bb from each player" near the pot. At hand end, `bounty` events
+   (`seat` = receiver, `fromSeat` = payer, `amount`, `bountyIndex` into `bounties`) come after the `award`
+   events with the same `street`; the log/table can show them as payouts. Final stack =
+   start + `result.netChips[seat]` + `result.bountyNetChips[seat]`.
+3. **Export lines (§10).** When a bounty is live: one header line per bounty after `Rake:`,
+   e.g. `Bounty: hand J4o | 2.0bb from each player | pays on showdown or fold` (or `card 4c`,
+   `pays on showdown only`), and a bounty part in RESULT: `| bounty +8.0bb (hand J4o)` for hero's net
+   (`record.heroBountyBb`), or `| bounty unclaimed` when nobody won it. Records carry `bounties` and
+   `result.bountyNetChips`; records made before this change have neither, so treat missing as `[]` / zeros.
+4. **Tracker (later).** Needs `record.heroBountyBb` (0 when none) for `bountyPer100` and
+   `bbPer100WithBounty` (§9); `heroNetBb` and `heroEvNetBb` exclude bounties. `statFlags.facedPostflopBet` /
+   `foldedToPostflopBet` are now in every record for `StatsSummary.foldToBet`.
+5. FYI: views and records now always carry `straddleSeat` (null when none).
+
+**For the SPEC owner (FYI, no change needed unless you disagree):**
+1. The hand-bounty pool follows the fixed multiway-weighted ranking, so it includes `22` and `87s` and
+   `K3o` alongside the usual junk. The weakest 84 is exactly what §15 says; flagging it only in case the
+   intent was "weak-looking" hands.
+2. §5's HandEvent table doesn't list `'bounty'` or `blind: 'straddle'` yet (schemas.js does).

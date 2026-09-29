@@ -31,3 +31,11 @@ export const POSITION_WIDTH = Object.freeze({
 export const PREFLOP_NOISE = 0.3;
 /** Postflop equity noise at skill 0 (scaled by 1 − skill). */
 export const POSTFLOP_NOISE = 0.4;
+
+/**
+ * How hard each tier chases a live bounty (SPEC §15), 0..1. Preflop it's the chance a bounty hand
+ * the bot would fold is played as a medium-strength hand instead; postflop it weights the extra
+ * bluffs, the river call discount and the call bonus against a possible holder. Fish chase most,
+ * tough regs adjust least.
+ */
+export const BOUNTY_CHASE = Object.freeze({ fish: 0.9, lowReg: 0.6, midReg: 0.4, toughReg: 0.2 });

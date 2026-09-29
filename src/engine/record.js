@@ -33,6 +33,7 @@ export function buildHandRecord(state, { sessionId, timestamp } = {}) {
     heroPosition: state.players[heroSeat].position,
     buttonSeat: state.buttonSeat,
     straddleSeat: state.straddleSeat ?? null,
+    bounties: (state.bounties ?? []).map((b) => ({ ...b })),
     players: state.players.map((p) => ({
       seat: p.seat,
       name: p.name,
@@ -47,6 +48,7 @@ export function buildHandRecord(state, { sessionId, timestamp } = {}) {
     result,
     heroNetBb,
     heroEvNetBb: result.heroAllInEv ? toBb(result.heroAllInEv.evNetChips) : heroNetBb,
+    heroBountyBb: toBb(result.bountyNetChips?.[heroSeat] ?? 0),
     rakeBb: toBb(result.rakeChips),
     heroRakeBb: totalAwarded > 0 ? toBb((result.rakeChips * heroAwarded) / totalAwarded) : 0,
     statFlags,
@@ -75,6 +77,7 @@ function replay(state) {
     vpip: false, pfr: false, threeBetOpp: false, threeBet: false,
     cbetOpp: false, cbet: false, foldToCbetOpp: false, foldToCbet: false,
     sawFlop: false, wentToShowdown: false, wonAtShowdown: false,
+    facedPostflopBet: false, foldedToPostflopBet: false,
     postflopBets: 0, postflopRaises: 0, postflopCalls: 0,
     // The straddle is a forced post: it never counts toward vpip/pfr or as a raise.
     straddled: false, facedStraddle: false,
@@ -142,6 +145,10 @@ function replay(state) {
               if (e.action === 'raise') flags.threeBet = true;
             }
           } else {
+            if (e.toCall > 0) {
+              flags.facedPostflopBet = true;
+              if (e.action === 'fold') flags.foldedToPostflopBet = true;
+            }
             if (e.action === 'bet') flags.postflopBets++;
             if (e.action === 'raise') flags.postflopRaises++;
             if (e.action === 'call') flags.postflopCalls++;
