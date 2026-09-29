@@ -51,7 +51,7 @@ function validateScenario(sc) {
 }
 
 /**
- * Build a new hand: shuffle with rng(seed), post blinds, deal hole cards.
+ * Build a new hand: shuffle with rng(deriveSeed(seed, 'deck')), post blinds, deal hole cards.
  * @param {import('../shared/schemas.js').ScenarioConfig} scenario
  * @param {{cards?: {holes?: Object<number, string[]>, board?: string[]}}} [opts]
  *   `cards` presets specific hole cards and/or the first board cards (tests and replays).
@@ -67,7 +67,9 @@ export function createHand(scenario, opts = {}) {
   const bbSeat = (sbSeat + 1) % n;
   const positions = POSITIONS_BY_SIZE[n]; // positions[i] belongs to seat bbSeat + 1 + i
 
-  let deck = shuffle(fullDeck(), createRng(scenario.seed));
+  // The deck gets its own stream: createScenario already consumed createRng(seed), and reusing it
+  // made the deal depend on table size (SPEC §13 item 11).
+  let deck = shuffle(fullDeck(), createRng(deriveSeed(scenario.seed, 'deck')));
   const presetHoles = opts.cards?.holes ?? {};
   const presetBoard = opts.cards?.board ?? [];
   const presetAll = [...Object.values(presetHoles).flat(), ...presetBoard];

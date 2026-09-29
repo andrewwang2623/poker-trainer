@@ -40,6 +40,17 @@ test('range villains and determinism', () => {
   assert.throws(() => computeEquity({ hero: ['As', 'Ah'], villains: [['As', 'Kd']] }), RangeError);
 });
 
+test('sampling needs an explicit rng; exact enumeration does not', () => {
+  // A hidden shared default stream would give every call the same samples (SPEC §13 item 11).
+  assert.throws(() => computeEquity({ hero: ['As', 'Ks'], villains: [{ QQ: 1 }] }), TypeError);
+  assert.throws(() => computeEquity({ hero: ['As', 'Ks'], villains: [['Qd', 'Qc']] }), TypeError);
+  const exact = computeEquity({ hero: ['As', 'Ks'], board: ['2c', '7d', '9s'], villains: [['Qd', 'Qc']] });
+  assert.equal(exact.samples, 990);
+  const a = computeEquity({ hero: ['As', 'Ks'], villains: [{ QQ: 1 }], iterations: 500, rng: createRng(1) });
+  const b = computeEquity({ hero: ['As', 'Ks'], villains: [{ QQ: 1 }], iterations: 500, rng: createRng(2) });
+  assert.notDeepEqual(a, b, 'different streams give different samples');
+});
+
 test('board textures', () => {
   assert.equal(boardTexture([]), null);
   assert.equal(boardTexture(['Ah', '7h', '2h']), 'monotone');

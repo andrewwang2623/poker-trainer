@@ -1,7 +1,6 @@
 // Equity by exact enumeration (known cards, ≤2 to come) or Monte Carlo.
 import { cardCode, classCombos } from './cards.js';
 import { evaluateCodes } from './evaluator.js';
-import { createRng } from './rng.js';
 
 /**
  * Call fn(fullBoardCodes) for every runout (exact) or for `iterations` random runouts.
@@ -82,8 +81,11 @@ function pickCombo({ combos, cumulative, total }, rng) {
 /**
  * Hero equity against any mix of known hands and ranges.
  * Exact when ≤2 board cards are to come and every villain is a known hand; Monte Carlo otherwise.
+ * Sampling needs the caller's `rng` (its own deriveSeed stream, SPEC §2): there is no shared
+ * default stream, which would give every call the same samples.
  * @param {{hero: string[], board?: string[], villains: (string[]|Object<string, number>)[],
- *          dead?: string[], iterations?: number, rng?: () => number}} opts
+ *          dead?: string[], iterations?: number, rng?: () => number}} opts  rng is optional only
+ *   when the result is exact.
  * @returns {{equity: number, win: number, tie: number, samples: number}}
  */
 export function computeEquity({ hero, board = [], villains, dead = [], iterations = 2000, rng }) {
@@ -132,19 +134,19 @@ export function computeEquity({ hero, board = [], villains, dead = [], iteration
   if (allKnown) {
     const deadAll = [...heroCodes, ...deadCodes, ...knownVillains.flat()];
     const samples = forEachRunout(
-      { boardCodes, deadCodes: deadAll, exact: toCome <= 2, iterations, rng: rng ?? createRng(1) },
+      { boardCodes, deadCodes: deadAll, exact: toCome <= 2, iterations, rng },
       tally,
     );
     return { equity: share / samples, win: wins / samples, tie: ties / samples, samples };
   }
 
-  rng = rng ?? createRng(1);
   const ranges = villains.map((v) => {
     if (Array.isArray(v)) return null;
     const r = rangeCombos(v, blocked);
     if (r.combos.length === 0) throw new RangeError('computeEquity: villain range has no available combos');
     return r;
   });
+  if (!rng) throw new TypeError('computeEquity: rng required for sampling');
   const used = new Uint8Array(52);
   const full = new Array(5);
   let samples = 0;

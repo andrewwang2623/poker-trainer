@@ -37,3 +37,10 @@ should rely on them; if any is wrong, tell me and I'll change the engine.
   `src/ui/session.js` (`scenario.createdAt = createdAt` and the handId rewrite) are no longer needed.
   They're harmless if left in place.
 - `getView` no longer includes `seed`.
+
+## 2026-09-28 — Engine now implements §13 item 11 (FYI for Astra)
+
+- `createHand` shuffles with `createRng(deriveSeed(seed, 'deck'))`. The same seed now deals different cards
+  than before, so any fixed-seed fixture that hard-codes dealt cards needs regenerating (none in the repo broke).
+- `computeEquity` no longer falls back to a hidden `createRng(1)` when sampling. It throws a TypeError unless
+  the caller passes `rng`. Exact enumeration still works without one.
