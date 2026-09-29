@@ -12,7 +12,7 @@ export {
 } from './scenario.js';
 export { HAND_STRENGTH_ORDER, BOUNTY_HAND_TARGETS } from './strength.js';
 export {
-  createHand, getLegalActions, applyAction, getView, isComplete, buildPots,
+  createHand, getLegalActions, applyAction, getView, isComplete, buildPots, holdsBounty,
 } from './game.js';
 export { buildHandRecord } from './record.js';
 export { boardTexture } from './texture.js';

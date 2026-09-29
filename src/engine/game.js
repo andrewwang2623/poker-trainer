@@ -2,12 +2,13 @@
 // applyAction never mutates its input: every transition works on a shallow-cloned state
 // (event objects and hole-card arrays are never mutated once created, so they're shared).
 import {
-  SCHEMA_VERSION, CHIPS_PER_BB, STAKES, POSITIONS_BY_SIZE, MIN_PLAYERS, MAX_PLAYERS,
+  SCHEMA_VERSION, CHIPS_PER_BB, STAKES, POSITIONS_BY_SIZE, MIN_PLAYERS, MAX_PLAYERS, BOUNTY_TYPES,
 } from '../shared/schemas.js';
 import { createRng, deriveSeed } from './rng.js';
 import { sha256Hex } from './sha256.js';
-import { isValidCreatedAt, straddlePosition, STRADDLE_CHIPS } from './scenario.js';
-import { fullDeck, shuffle, cardCode, isValidCard } from './cards.js';
+import { isValidCreatedAt, straddlePosition, STRADDLE_CHIPS, BOUNTY_PAYS_ON } from './scenario.js';
+import { fullDeck, shuffle, cardCode, isValidCard, handClass } from './cards.js';
+import { HAND_STRENGTH_ORDER } from './strength.js';
 import { evaluateCodes, scoreLabel } from './evaluator.js';
 import { forEachRunout } from './equity.js';
 
@@ -55,6 +56,15 @@ function validateScenario(sc) {
     }
     if (sc.seats.find((s) => s.seat === straddleSeat).stack <= STRADDLE_CHIPS) {
       throw new RangeError('straddleSeat needs a stack above 2bb');
+    }
+  }
+  const bounties = sc.bounties ?? [];
+  if (!Array.isArray(bounties)) throw new RangeError('bounties must be an array');
+  for (const b of bounties) {
+    const target = b?.type === 'hand' ? HAND_STRENGTH_ORDER.includes(b.target) : isValidCard(b?.target);
+    if (!BOUNTY_TYPES.includes(b?.type) || !target || !Number.isInteger(b.amountChips) || b.amountChips <= 0 ||
+        !BOUNTY_PAYS_ON.includes(b.paysOn)) {
+      throw new RangeError(`invalid bounty: ${JSON.stringify(b)}`);
     }
   }
 }
@@ -121,6 +131,7 @@ export function createHand(scenario, opts = {}) {
     bbSeat,
     heroSeat: scenario.heroSeat,
     straddleSeat,
+    bounties: (scenario.bounties ?? []).map((b) => ({ ...b })),
     players,
     street: 'preflop',
     board: [],
@@ -382,15 +393,79 @@ function finishHand(s, isShowdown, heroAllInEv = null) {
     });
   });
 
+  // Bounties are side payments: netChips stays the pot result, bountyNetChips holds the rest.
+  const netChips = s.players.map((p) => p.stack - p.startStack);
+  const bountyNetChips = settleBounties(s, pots, isShowdown, endStreet);
+
   s.street = 'complete';
   s.actingSeat = null;
   s.result = {
     pots,
     rakeChips,
-    netChips: s.players.map((p) => p.stack - p.startStack),
+    netChips,
     showdownSeats,
+    bountyNetChips,
     heroAllInEv,
   };
+}
+
+/** True when these hole cards match a bounty's target (hole cards only, never the board). */
+export function holdsBounty(holeCards, bounty) {
+  if (holeCards.length !== 2) return false;
+  return bounty.type === 'hand' ? handClass(holeCards) === bounty.target : holeCards.includes(bounty.target);
+}
+
+/**
+ * Pay the live bounties (SPEC §15) after the pots are awarded, hand bounty first. A seat qualifies
+ * when it won at least a share of the main pot with matching hole cards (and, for 'showdownOnly',
+ * the hand went to showdown). Every other seat pays min(amountChips, its stack now); the total is
+ * split equally among the qualifiers, odd chips to the first clockwise from the button. Each
+ * payer's chips are divided among the receivers to meet those totals, one 'bounty' event per
+ * payer→receiver transfer. Never raked. Mutates stacks and events.
+ * @returns {number[]} bounty net per seat
+ */
+function settleBounties(s, pots, isShowdown, street) {
+  const net = new Array(s.numPlayers).fill(0);
+  const mainWinners = pots[0]?.winnerSeats ?? [];
+  const clockwise = seatsFromButton(s);
+  const order = s.bounties.map((b, i) => i)
+    .sort((a, b) => BOUNTY_TYPES.indexOf(s.bounties[a].type) - BOUNTY_TYPES.indexOf(s.bounties[b].type) || a - b);
+  for (const bountyIndex of order) {
+    const bounty = s.bounties[bountyIndex];
+    if (bounty.paysOn === 'showdownOnly' && !isShowdown) continue;
+    const receivers = clockwise.filter((seat) => mainWinners.includes(seat) && holdsBounty(s.players[seat].holeCards, bounty));
+    if (!receivers.length) continue;
+    const payments = clockwise
+      .filter((seat) => !receivers.includes(seat))
+      .map((seat) => [seat, Math.min(bounty.amountChips, s.players[seat].stack)])
+      .filter(([, amount]) => amount > 0);
+    const total = payments.reduce((sum, [, amount]) => sum + amount, 0);
+    const k = receivers.length;
+    const share = Math.floor(total / k);
+    const quota = receivers.map((_, i) => share + (i === 0 ? total - share * k : 0));
+    const given = receivers.map(() => 0);
+    for (const [payer, amount] of payments) {
+      const base = Math.floor(amount / k);
+      const parts = receivers.map(() => base);
+      // Leftover chips go to receivers still short of their quota (the quotas always have room).
+      for (let left = amount - base * k, i = 0; left > 0; i = (i + 1) % k) {
+        if (given[i] + parts[i] < quota[i]) {
+          parts[i]++;
+          left--;
+        }
+      }
+      receivers.forEach((seat, i) => {
+        if (parts[i] <= 0) return;
+        given[i] += parts[i];
+        s.players[payer].stack -= parts[i];
+        s.players[seat].stack += parts[i];
+        net[payer] -= parts[i];
+        net[seat] += parts[i];
+        pushEvent(s, { type: 'bounty', street, seat, fromSeat: payer, amount: parts[i], bountyIndex });
+      });
+    }
+  }
+  return net;
 }
 
 /**
@@ -557,6 +632,8 @@ export function getView(state, seat) {
   const { deck, seed, ...rest } = state;
   return {
     ...rest,
+    straddleSeat: state.straddleSeat ?? null,
+    bounties: (state.bounties ?? []).map((b) => ({ ...b })),
     seat,
     position: me.position,
     holeCards: me.holeCards.slice(),

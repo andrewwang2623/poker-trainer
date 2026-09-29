@@ -33,6 +33,7 @@ export function buildHandRecord(state, { sessionId, timestamp } = {}) {
     heroPosition: state.players[heroSeat].position,
     buttonSeat: state.buttonSeat,
     straddleSeat: state.straddleSeat ?? null,
+    bounties: (state.bounties ?? []).map((b) => ({ ...b })),
     players: state.players.map((p) => ({
       seat: p.seat,
       name: p.name,
@@ -47,6 +48,7 @@ export function buildHandRecord(state, { sessionId, timestamp } = {}) {
     result,
     heroNetBb,
     heroEvNetBb: result.heroAllInEv ? toBb(result.heroAllInEv.evNetChips) : heroNetBb,
+    heroBountyBb: toBb(result.bountyNetChips?.[heroSeat] ?? 0),
     rakeBb: toBb(result.rakeChips),
     heroRakeBb: totalAwarded > 0 ? toBb((result.rakeChips * heroAwarded) / totalAwarded) : 0,
     statFlags,
