@@ -230,3 +230,11 @@ button:disabled, input:disabled { cursor: not-allowed; opacity: .55; }
   .commit-row { justify-self: stretch; }
   .commit-row .button { flex: 1; }
 }
+
+.action-timer {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.action-timer.timer-urgent { color: #e35c5c; }

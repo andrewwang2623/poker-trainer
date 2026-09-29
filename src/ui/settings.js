@@ -26,7 +26,7 @@ function setMixValue(current, chosen, target) {
   return next;
 }
 
-export function renderSettings(settings, onChange, appearance, onAppearanceChange) {
+export function renderSettings(settings, onChange, appearance, onAppearanceChange, timerSettings = { enabled: false, seconds: 30 }, onTimerChange = () => {}) {
   const section = element('section', 'panel settings-panel');
   section.setAttribute('aria-labelledby', 'settings-title');
   const heading = element('div', 'panel-heading');
@@ -47,6 +47,33 @@ export function renderSettings(settings, onChange, appearance, onAppearanceChang
   stakeSelect.value = settings.stakes;
   stakeSelect.addEventListener('change', () => onChange({ ...settings, stakes: stakeSelect.value }));
   section.append(stakeLabel, stakeSelect);
+
+  const timerRow = element('label', 'switch-row');
+  const timerToggle = element('input', 'switch-input');
+  timerToggle.type = 'checkbox';
+  timerToggle.checked = timerSettings.enabled;
+  timerRow.append(timerToggle, element('span', '', 'Player action timer'));
+  const durationLabel = element('label', 'field-label', 'Seconds per decision');
+  durationLabel.htmlFor = 'action-timer-seconds';
+  const duration = element('input', 'select-input');
+  duration.id = durationLabel.htmlFor;
+  duration.type = 'number';
+  duration.min = '5';
+  duration.max = '300';
+  duration.step = '1';
+  duration.value = String(timerSettings.seconds);
+  duration.disabled = !timerSettings.enabled;
+  timerToggle.addEventListener('change', () => onTimerChange({ ...timerSettings, enabled: timerToggle.checked }));
+  duration.addEventListener('change', () => {
+    const seconds = Number(duration.value);
+    if (!Number.isInteger(seconds) || seconds < 5 || seconds > 300) {
+      duration.value = String(timerSettings.seconds);
+      return;
+    }
+    onTimerChange({ ...timerSettings, seconds });
+  });
+  section.append(timerRow, durationLabel, duration,
+    element('p', 'panel-note', '5–300 seconds. Checks when time runs out, or folds if facing a bet. Changes restart your current timer.'));
 
   const switchRow = element('label', 'switch-row');
   const checkbox = element('input', 'switch-input');

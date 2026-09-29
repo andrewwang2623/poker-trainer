@@ -1,3 +1,4 @@
+import { createActionTimer, loadTimer, saveTimer } from './action-timer.js';
 import { STAKES } from '../shared/schemas.js';
 import { createMockSession } from './mock.js';
 import { element } from './dom.js';
@@ -13,10 +14,26 @@ export function mountApp(rootEl, app = {}) {
   let appearance = loadAppearance();
   applyAppearance(appearance);
   const session = app.session ?? createMockSession(settings);
+  let timerSettings = loadTimer();
+  let timerNode = null;
+  let destroyed = false;
+  const timer = createActionTimer(remaining => {
+    if (!timerNode) return;
+    timerNode.hidden = remaining === null;
+    timerNode.textContent = remaining === null ? '' : `${remaining}s left`;
+    timerNode.classList.toggle('timer-urgent', remaining !== null && remaining <= 5);
+  }, () => {
+    const state = session.getState();
+    const legal = session.getLegalActions();
+    if (destroyed || busy || state.actingSeat !== state.heroSeat || !legal) return;
+    const type = legal.types.includes('check') ? 'check' : legal.types.includes('fold') ? 'fold' : null;
+    if (type) handleAction({ type });
+  });
   let busy = false;
   let error = '';
 
   function render() {
+    if (destroyed) return;
     const state = session.getState();
     const legal = session.getLegalActions();
     const shell = element('div', 'app-shell');
@@ -37,6 +54,10 @@ export function mountApp(rootEl, app = {}) {
     left.append(renderTable(state));
     const controls = renderControls(state, legal, handleAction, handleNextHand);
     if (busy) controls.querySelectorAll('button, input').forEach(node => { node.disabled = true; });
+    timerNode = element('span', 'action-timer');
+    timerNode.setAttribute('role', 'timer');
+    timerNode.setAttribute('aria-label', 'Time remaining for your action');
+    controls.querySelector('.panel-heading').append(timerNode);
     left.append(controls);
     if (error) left.append(element('p', 'error-message', error));
     const right = element('aside', 'sidebar');
@@ -49,6 +70,10 @@ export function mountApp(rootEl, app = {}) {
       appearance = next;
       applyAppearance(appearance);
       saveAppearance(appearance);
+      render();
+    }, timerSettings, next => {
+      timerSettings = next;
+      saveTimer(next);
       render();
     }));
     const coachPanel = element('section', 'panel coach-panel');
@@ -66,6 +91,9 @@ export function mountApp(rootEl, app = {}) {
     rootEl.replaceChildren(shell);
     const list = rootEl.querySelector('.event-list');
     if (list) list.scrollTop = list.scrollHeight;
+    const timedTurn = timerSettings.enabled && !busy && legal &&
+      state.actingSeat === state.heroSeat && !state.result;
+    timer.sync(timedTurn ? `${state.handId}:${state.street}:${state.events.length}` : null, timerSettings.seconds);
   }
 
   async function handleAction(action) {
@@ -90,5 +118,5 @@ export function mountApp(rootEl, app = {}) {
 
   const unsubscribe = session.subscribe?.(render);
   render();
-  return { render, destroy: () => { unsubscribe?.(); rootEl.replaceChildren(); } };
+  return { render, destroy: () => { destroyed = true; timer.stop(); unsubscribe?.(); rootEl.replaceChildren(); } };
 }
