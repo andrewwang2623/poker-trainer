@@ -1,6 +1,7 @@
 // First-pass bounty play (SPEC §15). Holding a live bounty: open or defend it as at least a
 // medium-strength hand, bluff more postflop (only when a fold win pays), fold less on the river.
-// Facing a player who could hold one: a small call bonus. Everything scales with BOUNTY_CHASE,
+// Facing a player who could hold one: a small call bonus, only when a fold win pays it (with
+// 'showdownOnly', folding denies the bounty). Everything scales with BOUNTY_CHASE,
 // and nothing here draws from the rng unless a bounty applies, so bounty-free hands play as before.
 import { holdsBounty, classCombos, cardCode } from '../../engine/index.js';
 import { BOUNTY_CHASE, TIER_STYLE, POSITION_WIDTH } from './style.js';
@@ -29,11 +30,15 @@ export function heldBountyValue(view, held = heldBounties(view)) {
   return chips;
 }
 
-/** True when some bounty this seat doesn't hold could be in `seat`'s hand, given the cards we can see. */
-export function couldHoldBounty(view, seat) {
+/**
+ * True when some bounty this seat doesn't hold could be in `seat`'s hand, given the cards we can see.
+ * @param {string} [paysOn] only count bounties with this paysOn
+ */
+export function couldHoldBounty(view, seat, paysOn) {
   if (seat === null || seat === undefined || seat === view.seat) return false;
   const seen = new Set([...view.holeCards, ...view.board].map(cardCode));
   return (view.bounties ?? []).some((b) => {
+    if (paysOn && b.paysOn !== paysOn) return false;
     if (holdsBounty(view.holeCards, b)) return false;
     if (b.type === 'card') return !seen.has(cardCode(b.target));
     return classCombos(b.target).some(([x, y]) => !seen.has(x) && !seen.has(y));

@@ -199,7 +199,7 @@ test('postflop bluffs go up only when a fold win pays the bounty', () => {
   }
 });
 
-test('a small call bonus facing a player who could hold a bounty', () => {
+test('a small call bonus facing a player who could hold a bounty, only when a fold win pays it', () => {
   const bot = midProfile('lowReg');
   // Flop, heads-up: hero bets into the bot. A card bounty on 4c (unseen) vs on 3c (on the board).
   const board = ['As', 'Td', '3c', '5h', 'Jc'];
@@ -212,6 +212,10 @@ test('a small call bonus facing a player who could hold a bounty', () => {
   assert.equal(couldHoldBounty(getView(unseen, 1), 0), true);
   assert.equal(couldHoldBounty(getView(flop([card('3c')]), 1), 0), false);
   assert.equal(couldHoldBounty(getView(unseen, 1), 1), false, 'never ourselves');
+  const sdOnly = flop([card('4c', 2, 'showdownOnly')]);
+  assert.equal(couldHoldBounty(getView(sdOnly, 1), 0), true);
+  assert.equal(couldHoldBounty(getView(sdOnly, 1), 0, 'showdownOrFold'), false);
+  assert.equal(couldHoldBounty(getView(unseen, 1), 0, 'showdownOrFold'), true);
   assert.equal(couldHoldBounty(getView(flop([hand('86o')]), 1), 0), false, 'we hold it');
   // A hand bounty is impossible once our cards and the board block every combo.
   const blocked = fixedHand({ profiles: [null, bot], buttonSeat: 0, heroSeat: 0, bounties: [hand('AA')],
@@ -227,6 +231,8 @@ test('a small call bonus facing a player who could hold a bounty', () => {
     before += bonus.count(bonus.x, 'call');
     after += bonus.count(bonus.y, 'call');
     assert.deepEqual(paired(bot, base, flop([card('3c')], holes), 300).y, bonus.x, 'no bonus when nobody can hold it');
+    assert.deepEqual(paired(bot, base, flop([card('4c', 2, 'showdownOnly')], holes), 300).y, bonus.x,
+      'no bonus with showdownOnly: folding denies the bounty');
   }
   assert.ok(after > before, `${before} → ${after} calls`);
   assert.ok(after - before < 0.03 * 7 * 300, 'the bonus is small');

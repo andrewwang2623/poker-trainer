@@ -105,7 +105,8 @@ export function postflopDecision(view, profile, ctx, adj) {
   // River with a held bounty: the bounty is part of what a call can win.
   const bountyPot = riverChase > 0 ? riverChase * heldBountyValue(view, held) : 0;
   const callOdds = bountyPot > 0 ? toCall / (view.pot + toCall + bountyPot) : potOdds;
-  const holderBonus = couldHoldBounty(view, view.lastAggressorSeat) ? chase * BOUNTY_CALL_BONUS : 0;
+  // Calling a possible bounty holder only helps when a fold would hand them the bounty.
+  const holderBonus = couldHoldBounty(view, view.lastAggressorSeat, 'showdownOrFold') ? chase * BOUNTY_CALL_BONUS : 0;
   const required = callOdds * (facingHero ? adj.callMul : 1) - (TIER_STYLE[profile.tier]?.looseCall ?? 0) - holderBonus;
   // Realization as in the coach's EV model (SPEC §8.2): all of it on the river, less out of position.
   const realized = equity * (view.street === 'river' ? 1 : inPosition(view) ? 0.95 : 0.85);
