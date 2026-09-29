@@ -7,8 +7,10 @@ export { evaluate, evaluateCodes, scoreLabel, scoreCategory, HAND_CATEGORIES } f
 export { computeEquity, forEachRunout } from './equity.js';
 export {
   createScenario, normalizePool, sampleTier, chooseStraddleSeat, straddlePosition, normalizeStraddleOption,
-  STRADDLE_CHIPS, STRADDLE_RATES,
+  normalizeBountyOption, drawBounties, STRADDLE_BB, STRADDLE_CHIPS, STRADDLE_RATES, BOUNTY_CARD_TARGETS,
+  BOUNTY_PAYS_ON,
 } from './scenario.js';
+export { HAND_STRENGTH_ORDER, BOUNTY_HAND_TARGETS } from './strength.js';
 export {
   createHand, getLegalActions, applyAction, getView, isComplete, buildPots,
 } from './game.js';

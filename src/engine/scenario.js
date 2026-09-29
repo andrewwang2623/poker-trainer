@@ -1,17 +1,20 @@
 // Random table scenario (SPEC §4).
 import {
   STAKES, TIERS, CHIPS_PER_BB, MIN_PLAYERS, MAX_PLAYERS, MIN_STACK_BB, MAX_STACK_BB,
+  STRADDLE_BB, STRADDLE_RATES, BOUNTY_DEFAULTS, BOUNTY_CARD_RANKS, SUITS,
 } from '../shared/schemas.js';
 import { createRng, deriveSeed, randInt } from './rng.js';
+import { BOUNTY_HAND_TARGETS } from './strength.js';
 
-/** Live straddle size: 2bb. A UTG stack at or below this can't straddle. */
-export const STRADDLE_CHIPS = 2 * CHIPS_PER_BB;
+export { STRADDLE_BB, STRADDLE_RATES };
 
-/**
- * Chance a bot sitting UTG straddles, by tier, when straddles are enabled. Hero uses the
- * `heroChance` setting instead. (Requested to move into schemas.js next to the tier tables.)
- */
-export const STRADDLE_RATES = Object.freeze({ fish: 0.25, lowReg: 0.10, midReg: 0.05, toughReg: 0.03 });
+/** Live straddle size in chips (STRADDLE_BB). A UTG stack at or below this can't straddle. */
+export const STRADDLE_CHIPS = STRADDLE_BB * CHIPS_PER_BB;
+
+/** The 24 card-bounty targets: every card ranked 2–7 (BOUNTY_CARD_RANKS). */
+export const BOUNTY_CARD_TARGETS = Object.freeze(BOUNTY_CARD_RANKS.flatMap((r) => SUITS.map((s) => r + s)));
+
+export const BOUNTY_PAYS_ON = Object.freeze(['showdownOrFold', 'showdownOnly']);
 
 const NO_STRADDLE = Object.freeze({ enabled: false, heroChance: 0 });
 
@@ -38,17 +41,20 @@ export function sampleTier(pool, rng) {
 
 /**
  * @param {{stakes: import('../shared/schemas.js').StakesId, poolOverride?: Object, seed?: number,
- *          createdAt: number, straddle?: {enabled: boolean, heroChance?: number}}} opts
+ *          createdAt: number, straddle?: {enabled: boolean, heroChance?: number}, bounty?: Object}} opts
  *   createdAt is ms since epoch (the caller reads the clock, not the engine). `straddle` turns live
- *   UTG straddles on (default off); heroChance (0–1) is hero's chance when hero sits UTG.
+ *   UTG straddles on (default off); heroChance (0–1) is hero's chance when hero sits UTG. `bounty`
+ *   is {hand?, card?, paysOn?} (SPEC §15), each type {enabled, chance, amountBb}; missing parts take
+ *   BOUNTY_DEFAULTS, so every type is off unless enabled.
  * @param {import('../shared/schemas.js').Rng} [rng] defaults to createRng(seed)
  * @returns {import('../shared/schemas.js').ScenarioConfig}
  */
-export function createScenario({ stakes, poolOverride, seed, createdAt, straddle = NO_STRADDLE }, rng) {
+export function createScenario({ stakes, poolOverride, seed, createdAt, straddle = NO_STRADDLE, bounty }, rng) {
   if (!STAKES[stakes]) throw new RangeError(`Unknown stakes: ${stakes}`);
   if (seed === undefined && !rng) throw new TypeError('createScenario needs a seed or an rng');
   if (!isValidCreatedAt(createdAt)) throw new TypeError('createScenario needs createdAt (ms since epoch)');
   straddle = normalizeStraddleOption(straddle);
+  bounty = normalizeBountyOption(bounty);
   rng = rng ?? createRng(seed);
   if (seed === undefined) seed = Math.floor(rng() * 4294967296);
   const pool = normalizePool(poolOverride ?? STAKES[stakes].pool, STAKES[stakes].pool);
@@ -69,6 +75,7 @@ export function createScenario({ stakes, poolOverride, seed, createdAt, straddle
   }
   const scenario = { seed, createdAt, stakes, numPlayers, buttonSeat, heroSeat, seats };
   scenario.straddleSeat = chooseStraddleSeat(scenario, straddle);
+  scenario.bounties = drawBounties(seed, bounty);
   return scenario;
 }
 
@@ -116,6 +123,58 @@ export function chooseStraddleSeat(scenario, straddle) {
   const chance = seat === scenario.heroSeat ? heroChance : (STRADDLE_RATES[cfg.tier] ?? 0);
   if (!(chance > 0)) return null;
   return createRng(deriveSeed(scenario.seed, 'straddle'))() < chance ? seat : null;
+}
+
+/**
+ * Validate the bounty option and fill gaps from BOUNTY_DEFAULTS. Each type is
+ * {enabled: boolean, chance: number in [0, 1], amountBb: number > 0}; paysOn is
+ * 'showdownOrFold' or 'showdownOnly'.
+ * @returns {{hand: {enabled: boolean, chance: number, amountBb: number},
+ *            card: {enabled: boolean, chance: number, amountBb: number}, paysOn: string}}
+ */
+export function normalizeBountyOption(bounty) {
+  if (bounty === undefined || bounty === null) return BOUNTY_DEFAULTS;
+  if (typeof bounty !== 'object') throw new RangeError('bounty must be {hand?, card?, paysOn?}');
+  const type = (name) => {
+    const opt = { ...BOUNTY_DEFAULTS[name], ...(bounty[name] ?? {}) };
+    if (typeof opt.enabled !== 'boolean') throw new RangeError(`bounty.${name}.enabled must be a boolean`);
+    if (typeof opt.chance !== 'number' || !(opt.chance >= 0 && opt.chance <= 1)) {
+      throw new RangeError(`bounty.${name}.chance must be a number in [0, 1], got ${opt.chance}`);
+    }
+    if (typeof opt.amountBb !== 'number' || !(opt.amountBb > 0) || !Number.isFinite(opt.amountBb)) {
+      throw new RangeError(`bounty.${name}.amountBb must be a positive number, got ${opt.amountBb}`);
+    }
+    return { enabled: opt.enabled, chance: opt.chance, amountBb: opt.amountBb };
+  };
+  const paysOn = bounty.paysOn ?? BOUNTY_DEFAULTS.paysOn;
+  if (!BOUNTY_PAYS_ON.includes(paysOn)) throw new RangeError(`bounty.paysOn must be one of ${BOUNTY_PAYS_ON.join(', ')}`);
+  return { hand: type('hand'), card: type('card'), paysOn };
+}
+
+/**
+ * Draw the live bounties (SPEC §15) from createRng(deriveSeed(seed, 'bounty')): always four draws,
+ * hand roll, hand target, card roll, card target, so no other stream shifts and toggling one type
+ * never changes the other. Hand targets are uniform over the weakest BOUNTY_HAND_POOL classes, card
+ * targets over the 24 cards ranked 2–7.
+ * @param {number} seed
+ * @param {Object} [bounty] the createScenario option
+ * @returns {import('../shared/schemas.js').Bounty[]} hand first, then card; [] when none
+ */
+export function drawBounties(seed, bounty) {
+  const opt = normalizeBountyOption(bounty);
+  const rng = createRng(deriveSeed(seed, 'bounty'));
+  const handRoll = rng();
+  const handTarget = BOUNTY_HAND_TARGETS[Math.floor(rng() * BOUNTY_HAND_TARGETS.length)];
+  const cardRoll = rng();
+  const cardTarget = BOUNTY_CARD_TARGETS[Math.floor(rng() * BOUNTY_CARD_TARGETS.length)];
+  const bounties = [];
+  const live = (t, roll, target) => {
+    if (!opt[t].enabled || !(roll < opt[t].chance)) return;
+    bounties.push({ type: t, target, amountChips: Math.round(opt[t].amountBb * CHIPS_PER_BB), paysOn: opt.paysOn });
+  };
+  live('hand', handRoll, handTarget);
+  live('card', cardRoll, cardTarget);
+  return bounties;
 }
 
 /** createdAt must be a non-negative integer millisecond timestamp. */
