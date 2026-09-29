@@ -67,6 +67,16 @@ export function renderTable(state, revealDelays = [], revealHands = false) {
   table.append(inner);
 
   const shown = new Set(state.events.filter(event => event.type === 'showdown').map(event => event.seat));
+  const actions = state.events.filter(event => event.type === 'action');
+  const lastAction = actions.at(-1);
+  const actionStreet = ['complete', 'showdown'].includes(state.street) ? lastAction?.street : state.street;
+  const latestActions = new Map(actions.filter(event => event.street === actionStreet)
+    .map(event => [event.seat, event]));
+  // A closing check advances the engine's street immediately. Keep it visible,
+  // labeled with its street, until the next action so it is not skipped on screen.
+  if (lastAction?.action === 'check' && lastAction.street !== actionStreet) {
+    latestActions.set(lastAction.seat, lastAction);
+  }
   for (const player of state.players) {
     const offset = (player.seat - state.heroSeat + state.numPlayers) % state.numPlayers;
     const angle = (90 + offset * 360 / state.numPlayers) * Math.PI / 180;
@@ -92,7 +102,15 @@ export function renderTable(state, revealDelays = [], revealHands = false) {
     const hole = cards(visibleCards ? player.holeCards : ['??', '??'], !visibleCards);
     hole.classList.add('hole-cards');
     seat.append(hole);
-    if (player.committedStreet > 0) seat.append(element('span', 'bet-chips', chips(player.committedStreet)));
+    const latestAction = latestActions.get(player.seat);
+    if (latestAction?.action === 'check' && !player.folded) {
+      const label = latestAction.street === actionStreet ? 'Check' : `Check · ${latestAction.street}`;
+      const check = element('span', 'bet-chips seat-check', label);
+      check.setAttribute('aria-label', `${player.name} checks on the ${latestAction.street}`);
+      seat.append(check);
+    } else if (player.committedStreet > 0) {
+      seat.append(element('span', 'bet-chips', chips(player.committedStreet)));
+    }
     if (player.seat === state.buttonSeat) seat.append(element('span', 'dealer-button', 'D'));
     table.append(seat);
   }

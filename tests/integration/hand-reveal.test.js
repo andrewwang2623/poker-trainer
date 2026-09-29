@@ -96,6 +96,45 @@ test('table refuses early reveal and preserves showdown cards when reveal is off
   assert.equal(renderTable(state, [], false).querySelectorAll('.card-back').length, 8);
 });
 
+test('check badges show hero and AI checks, replace later actions, and reset across hands', t => {
+  const session = setup(t);
+  session.act({ type: 'call' });
+  const state = structuredClone(session.getState());
+  // The mock checks the BB to hero on the flop.
+  assert.match(renderTable(state).querySelector('.seat-check').attributes['aria-label'], /checks on the flop/);
+  const check = { seq: state.events.length, type: 'action', street: 'flop', seat: state.heroSeat,
+    action: 'check', amount: 0, to: 0, allIn: false, potBefore: state.potCollected, toCall: 0,
+    stackBefore: state.players[state.heroSeat].stack };
+  state.events.push(check);
+  let table = renderTable(state);
+  assert.equal(table.querySelectorAll('.seat-check').length, 2);
+  assert.equal(table.querySelector('.seat-hero').querySelector('.seat-check').textContent, 'Check');
+  state.events.push({ ...check, seq: check.seq + 1, action: 'bet', amount: 100, to: 100 });
+  state.players[state.heroSeat].committedStreet = 100;
+  table = renderTable(state);
+  assert.equal(table.querySelector('.seat-hero').querySelector('.seat-check'), null);
+  assert.equal(table.querySelector('.seat-hero').querySelector('.bet-chips').textContent, '1.0 bb');
+  session.nextHand();
+  assert.equal(renderTable(session.getState()).querySelector('.seat-check'), null);
+});
+
+test('street-closing checks remain visible until the next action, including the final river check', t => {
+  const session = setup(t);
+  session.act({ type: 'call' });
+  const state = structuredClone(session.getState());
+  const closingCheck = { ...state.events.at(-1), seq: state.events.length, seat: state.heroSeat };
+  state.events.push(closingCheck, { seq: state.events.length + 1, type: 'board', street: 'turn', cards: ['9s'] });
+  state.street = 'turn';
+  state.board.push('9s');
+  assert.equal(renderTable(state).querySelector('.seat-hero').querySelector('.seat-check').textContent, 'Check · flop');
+  state.events.push({ ...closingCheck, seq: state.events.length, seat: 5, street: 'turn' });
+  assert.equal(renderTable(state).querySelector('.seat-hero').querySelector('.seat-check'), null);
+  while (session.getState().street !== 'complete') session.act({ type: 'check' });
+  const checks = renderTable(session.getState()).querySelectorAll('.seat-check');
+  assert.equal(checks.length, 2);
+  assert.ok(checks.every(node => node.attributes['aria-label'].endsWith('river')));
+});
+
 test('table shows current stakes rake during play and actual rake after the hand', t => {
   const session = setup(t);
   const state = session.getState();
