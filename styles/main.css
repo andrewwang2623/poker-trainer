@@ -149,6 +149,8 @@ button:disabled, input:disabled { cursor: not-allowed; opacity: .55; }
 .bet-chips { position: absolute; left: 50%; bottom: -17px; padding: 4px 8px; border: 1px solid #efe6bf; border-radius: 20px; background: #e0be79; color: #222719; font-size: calc(10px * var(--text-scale)); font-weight: 800; transform: translateX(-50%); white-space: nowrap; }
 .dealer-button { position: absolute; top: -10px; right: -7px; display: grid; place-items: center; width: 24px; height: 24px; border: 2px solid #2b382b; border-radius: 50%; background: #f7f1d6; color: #263327; font-size: calc(11px * var(--text-scale)); font-weight: 900; }
 .seat-check { border-color: #b9e1cc; background: #d7f0e2; color: #173d2a; }
+.straddle-badge { color: #ffe3a3; font-size: calc(9px * var(--text-scale)); font-weight: 700; }
+.straddle-help { color: var(--muted); font-size: calc(11px * var(--text-scale)); line-height: 1.5; }
 
 .panel { min-width: 0; padding: 20px; border: 1px solid var(--panel-edge); border-radius: 16px; background: linear-gradient(145deg, var(--panel-top), var(--panel)); box-shadow: 0 12px 25px #06181135; }
 .panel-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 16px; }

@@ -1,5 +1,6 @@
 import { seedHash } from './seed-hash.js';
 import { botActionDelay, normalizeBotSpeed } from './bot-speed.js';
+import { maybePostStraddle } from './straddle.js';
 
 const randomWord = () => globalThis.crypto.getRandomValues(new Uint32Array(1))[0];
 
@@ -48,6 +49,7 @@ export function createEngineSession(engine, bots, initialSettings = {}, options 
       profile: seat.isHero ? null : bots.createBotProfile(seat.tier, rng),
     }));
     state = engine.createHand(scenario);
+    state = maybePostStraddle(state, settings.straddle, engine.createRng(engine.deriveSeed(seed, 'straddle')));
     const prefix = `${createdAt.toString(36)}-`;
     if (!new RegExp(`^${prefix}[a-f0-9]{8}$`).test(state.handId)) {
       state = { ...state, handId: `${prefix}${seedHash(seed)}` };

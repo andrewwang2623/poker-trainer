@@ -8,6 +8,7 @@ import { renderLog } from './log.js';
 import { renderSettings } from './settings.js';
 import { applyAppearance, loadAppearance, saveAppearance } from './appearance.js';
 import { createExportPanel } from './export.js';
+import { loadStraddle, normalizeStraddle, saveStraddle } from './straddle.js';
 import { loadBotPacing, loadBotSpeed, loadOutBotSpeed, normalizeBotSpeed, saveBotPacing, saveBotSpeed, saveOutBotSpeed } from './bot-speed.js';
 
 /** Mounts the table UI against a session adapter exposing state, legal actions, act and nextHand. */
@@ -16,6 +17,7 @@ export function mountApp(rootEl, app = {}) {
   settings.botSpeed = normalizeBotSpeed(settings.botSpeed ?? loadBotSpeed());
   settings.botPacing = settings.botPacing ?? loadBotPacing();
   settings.outBotSpeed = normalizeBotSpeed(settings.outBotSpeed ?? loadOutBotSpeed());
+  settings.straddle = normalizeStraddle(settings.straddle ?? loadStraddle());
   let appearance = loadAppearance();
   applyAppearance(appearance);
   const session = app.session ?? createMockSession(settings);
@@ -108,6 +110,11 @@ export function mountApp(rootEl, app = {}) {
     const right = element('aside', 'sidebar');
     right.append(renderLog(state), renderSettings(settings, next => {
       const stakeChanged = next.stakes !== settings.stakes;
+      if (next.straddle?.enabled !== settings.straddle.enabled ||
+          next.straddle?.chancePercent !== settings.straddle.chancePercent) {
+        next.straddle = normalizeStraddle(next.straddle);
+        saveStraddle(next.straddle);
+      }
       if (next.outBotSpeed !== settings.outBotSpeed) {
         next.outBotSpeed = normalizeBotSpeed(next.outBotSpeed);
         session.setOutBotSpeed?.(next.outBotSpeed);

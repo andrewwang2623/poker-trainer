@@ -1,6 +1,7 @@
 import { mountApp } from './ui/index.js';
 import { createEngineSession } from './ui/session.js';
 import { loadBotPacing, loadBotSpeed, loadOutBotSpeed, normalizeBotSpeed } from './ui/bot-speed.js';
+import { loadStraddle, normalizeStraddle } from './ui/straddle.js';
 
 const load = path => import(path).catch(() => null);
 
@@ -9,6 +10,7 @@ export async function createApp(settings = { stakes: 'micro', poolOverride: null
   settings = { ...settings, botSpeed: normalizeBotSpeed(settings.botSpeed ?? loadBotSpeed()) };
   settings.botPacing = settings.botPacing ?? loadBotPacing();
   settings.outBotSpeed = normalizeBotSpeed(settings.outBotSpeed ?? loadOutBotSpeed());
+  settings.straddle = normalizeStraddle(settings.straddle ?? loadStraddle());
   const sessionId = sessionOptions.sessionId ??
     `session-${globalThis.crypto.getRandomValues(new Uint32Array(1))[0].toString(36)}-${Date.now().toString(36)}`;
   const [engine, realBots, placeholderBots, coach, explain, exporter, data, trackerModule] = await Promise.all([
