@@ -137,7 +137,8 @@ export const PROFITABILITY_DISCLAIMER =
 /**
  * @typedef {Object} LegalActions
  * @property {number} seat
- * @property {ActionType[]} types  Legal action types right now.
+ * @property {ActionType[]} types  Legal action types right now: ['check', …] when toCall = 0,
+ *   ['fold', 'call', …] otherwise ('fold' is never legal when 'check' is), then 'bet' or 'raise' if legal.
  * @property {number} toCall   Chips needed to call (0 if check is legal).
  * @property {number} minTo    Minimum legal "to" amount for bet/raise (0 if neither legal).
  * @property {number} maxTo    Maximum "to" amount (all-in).
@@ -162,7 +163,7 @@ export const PROFITABILITY_DISCLAIMER =
 
 /**
  * @typedef {Object} Pot
- * @property {number} amount
+ * @property {number} amount          After rake (rake comes off the main pot first).
  * @property {number[]} eligibleSeats
  * @property {number[]} winnerSeats   Filled at hand end.
  */
@@ -176,18 +177,19 @@ export const PROFITABILITY_DISCLAIMER =
 
 /**
  * @typedef {Object} HandResult
- * @property {Pot[]} pots
+ * @property {Pot[]} pots              Σ amount = Σ award events; Σ amount + rakeChips = chips contributed.
  * @property {number} rakeChips
  * @property {number[]} netChips        Net per seat (index = seat), after rake.
  * @property {number[]} showdownSeats   Seats that showed cards.
- * @property {AllInEv|null} heroAllInEv  Set when hero was all-in (or called one) with cards to come.
+ * @property {AllInEv|null} heroAllInEv  Set only when betting closed for the rest of the hand with board
+ *   cards to come and hero not folded. Folded players' cards count as unknown.
  */
 
 /**
  * @typedef {Object} GameState
  * @property {number} schemaVersion
- * @property {string} handId
- * @property {number} seed
+ * @property {string} handId          createdAt.toString(36) + '-' + first 8 hex chars of a one-way hash of seed.
+ * @property {number} seed            Never shown to UI/bots (the deck is derived from it).
  * @property {StakesId} stakes
  * @property {number} numPlayers
  * @property {number} buttonSeat
@@ -210,6 +212,8 @@ export const PROFITABILITY_DISCLAIMER =
 
 /**
  * One entry in GameState.events / HandRecord.events. `seq` is the index in the log.
+ * `street` is the street the event happened on; 'rake' and 'award' use 'showdown' if there was a
+ * showdown, otherwise the street the hand ended on.
  * type-specific fields:
  *  - 'postBlind': seat, blind ('SB'|'BB'), amount
  *  - 'dealHole':  seat, cards
@@ -249,7 +253,8 @@ export const PROFITABILITY_DISCLAIMER =
 
 /**
  * @typedef {Object} ScenarioConfig
- * @property {number} seed
+ * @property {number} seed             Fresh per hand.
+ * @property {number} createdAt        ms since epoch, set by main.js (Date.now()); feeds handId.
  * @property {StakesId} stakes
  * @property {number} numPlayers
  * @property {number} buttonSeat
@@ -258,20 +263,33 @@ export const PROFITABILITY_DISCLAIMER =
  */
 
 /**
- * What a bot (or the hero UI) may see: GameState minus the deck and other seats' hole cards.
+ * What a bot (or the hero UI) may see: GameState minus `deck` and `seed`, other seats' hole cards
+ * hidden, plus the per-seat fields below.
  * @typedef {Object} SeatView
  * @property {number} seat
+ * @property {number} schemaVersion
  * @property {string} handId
  * @property {StakesId} stakes
- * @property {Street} street
+ * @property {number} numPlayers
+ * @property {number} buttonSeat
+ * @property {number} sbSeat
+ * @property {number} bbSeat
+ * @property {number} heroSeat
+ * @property {Street|'showdown'|'complete'} street
  * @property {Position} position
  * @property {Card[]} holeCards
  * @property {Card[]} board
  * @property {number} pot              Total chips in the middle incl. current-street bets.
- * @property {LegalActions} legal
+ * @property {number} potCollected
+ * @property {number} currentBet
+ * @property {number} lastRaiseSize
+ * @property {number|null} actingSeat
+ * @property {number|null} lastAggressorSeat
+ * @property {LegalActions|null} legal null when this seat isn't to act.
  * @property {PlayerState[]} players   holeCards [] for every other seat (until showdown events).
  * @property {number|null} preflopAggressorSeat
  * @property {HandEvent[]} events      'dealHole' events of other seats removed.
+ * @property {HandResult|null} result
  */
 
 // ---------------------------------------------------------------------------

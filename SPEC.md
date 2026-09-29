@@ -79,14 +79,17 @@ The authoritative values are in `STAKES` in schemas.js.
 | high | High (NL500) | $2.50/$5 | 3.5% | 0.6bb | 5/15/35/45 | 4 |
 
 - Rake is "no flop, no drop": `rakeChips = floor(min(potTotal × rakePct, rakeCapBb × 100))`, taken only if a
-  flop was dealt. It comes off the pots before awarding, main pot first.
+  flop was dealt. It comes off the pots before awarding, main pot first. `HandResult.pots[].amount` is after
+  rake, so Σ pot amounts = Σ `award` amounts, and Σ pot amounts + `rakeChips` = total chips contributed.
 - The settings UI has a stakes selector and a manual pool override: four sliders, normalized to sum to 1.
   The override replaces `pool` for scenario generation only.
 - `winningRanges` (per stakes, in schemas.js) are calibrated for 6-max. With random table sizes they're only
   approximate. They're used for pattern flags and the profitability model.
 
-## 4. Scenario generation (`createScenario({stakes, poolOverride?, seed}, rng)`)
+## 4. Scenario generation (`createScenario({stakes, poolOverride?, seed, createdAt}, rng)`)
 
+- `createdAt` (ms since epoch) is copied into `ScenarioConfig.createdAt`. main.js passes `Date.now()`. It feeds
+  `handId` (§5). Pure modules never read the clock themselves, so a hand stays reproducible from its ScenarioConfig.
 - `numPlayers` is uniform over 2–9. `buttonSeat` and `heroSeat` are uniform over seats, so hero's position is random.
 - Every stack is uniform over 20–200bb, rounded to whole bb. Stacks don't carry over between hands.
 - Each non-hero seat gets a tier sampled from the pool. `main.js` then fills `seats[i].profile` with
@@ -102,17 +105,32 @@ current street. An all-in is a bet/raise to `maxTo`, or a call when `stack ≤ t
 
 **LegalActions** `{seat, types, toCall, minTo, maxTo}`. Standard NLHE min-raise: `minTo = currentBet + lastRaiseSize`,
 capped at all-in. An all-in under a full raise doesn't reopen betting for players who already acted.
+- `fold` is legal only when there's something to call: `types` starts `['check']` when `toCall = 0` and
+  `['fold', 'call']` otherwise, followed by `'bet'` or `'raise'` when legal. The UI hides or disables Fold when
+  nothing is owed.
+- An opening bet (no bet yet on the street) always reopens betting, even an all-in under 1bb. Only raises are
+  checked against the full-raise rule. After a short opening bet, `lastRaiseSize` stays 1bb, so the min-raise
+  is `currentBet + 1bb`.
 
 **GameState**: `schemaVersion, handId, seed, stakes, numPlayers, buttonSeat, sbSeat, bbSeat, heroSeat,
 players: PlayerState[], street ('preflop'|'flop'|'turn'|'river'|'showdown'|'complete'), board, deck,
 potCollected, currentBet, lastRaiseSize, actingSeat, lastAggressorSeat, preflopAggressorSeat, events, result`.
 - `applyAction` advances streets, deals the board, runs out all-ins, resolves showdown, side pots, rake and
-  awards. It also sets `result` and `street: 'complete'`. Odd chips go to the first winner clockwise from the button.
+  awards. It also sets `result` and `street: 'complete'`. Odd chips: when a pot splits unevenly, the whole
+  remainder goes to the first winner clockwise from the button (not one chip each).
+- `handId` = `createdAt.toString(36)` + `-` + the first 8 lowercase hex characters of a one-way hash of `seed`
+  (e.g. `mfz3k9q1-3fa92c07`). The timestamp makes ids unique across hands, even when a seed repeats. The hash
+  keeps the seed hidden, since `handId` is visible in every SeatView. It must be a real one-way hash computed
+  synchronously in pure JS. A reversible integer mix such as a MurmurHash finalizer doesn't count.
+  The same ScenarioConfig always gives the same `handId`.
 - `PlayerState`: `seat, name, isHero, position, profile, startStack, stack, committedStreet, committedTotal,
   holeCards, folded, allIn, hasActed`.
 - `HandResult`: `pots[{amount, eligibleSeats, winnerSeats}], rakeChips, netChips[seat], showdownSeats,
-  heroAllInEv`. `heroAllInEv` is set when hero is all-in or has called an all-in with board cards still to come.
+  heroAllInEv`. `pots[].amount` is after rake (§3). `heroAllInEv` is set only when betting has closed for the
+  rest of the hand with board cards still to come and hero hasn't folded (the runout case, which covers hero
+  all-in, hero calling an all-in, and an opponent calling hero's bet all-in). Otherwise it's `null`.
   It's computed at that moment: exact enumeration for 1–2 cards to come, 20,000-sample Monte Carlo otherwise.
+  Folded players' cards count as unknown (they stay in the pool of possible board cards).
   Hero's expected share is taken pot by pot, minus hero's contribution, minus hero's expected rake share.
 
 **HandEvent** `{seq, type, street, …}` with these types:
@@ -128,8 +146,15 @@ potCollected, currentBet, lastRaiseSize, actingSeat, lastAggressorSeat, preflopA
 | rake | amount |
 | award | seat, amount, potIndex |
 
+Event `street`: the street the event happened on. `uncalled` uses the street it happened on. `rake` and `award`
+use `'showdown'` if there was a showdown, otherwise the street the hand ended on (e.g. `'preflop'` for a walk).
+
 **SeatView** (`getView(state, seat)`): the state for one seat with no deck, other seats' hole cards set to `[]`,
 and other seats' `dealHole` events removed. `showdown` events stay visible. The hero UI uses the same view.
+It carries every other GameState field except `deck` and `seed` (e.g. `buttonSeat`, `currentBet`,
+`lastRaiseSize`, `actingSeat`, `result`), plus `seat`, `position`, `holeCards`, `pot` and `legal`. `street` can
+be `'showdown'` or `'complete'` for finished hands. `legal` is `null` when the seat isn't to act. `seed` is left
+out because the deck is a pure function of it.
 
 **BotProfile** `{id, name, tier, avatar{color, initials}, vpip, pfr, threeBet, aggression, bluffFreq,
 foldToBet, skill, usesCharts, textureSizing, mixing, exploitsHero}`. The rates are 0..1. `aggression` is the target
@@ -172,8 +197,10 @@ Redaction is the exporter's job.
 ### Engine (`src/engine/index.js`)
 ```js
 createRng(seed) → Rng
-createScenario({stakes, poolOverride?, seed}, rng) → ScenarioConfig
-createHand(scenario) → GameState                 // shuffles with rng(seed), posts blinds, deals
+createScenario({stakes, poolOverride?, seed, createdAt}, rng) → ScenarioConfig
+createHand(scenario, {cards?}) → GameState      // shuffles with rng(seed), posts blinds, deals
+  // optional cards = {holes?: {[seat]: Card[2]}, board?: Card[≤5]} presets hole cards and/or the first
+  // board cards (tests and replays); the rest come from the seeded shuffle. main.js uses one argument.
 getLegalActions(state) → LegalActions | null      // null when no one is to act
 applyAction(state, action) → GameState            // throws RangeError on illegal action
 getView(state, seat) → SeatView
@@ -243,7 +270,9 @@ app = { engine, bots, coach|null, explain|null, exporter|null, tracker|null,
 `bots` is `src/bots/index.js` if it loads, otherwise `placeholder.js`. The UI shows a feature's controls only
 when its flag is true. Later milestones only add modules. main.js wiring stays additive.
 Hand loop in main.js/ui:
-1. `createScenario` → fill profiles → `createHand`.
+1. `createScenario` → fill profiles → `createHand`. Use a fresh seed for every hand (e.g. drawn from a session
+   RNG seeded once from `crypto.getRandomValues`) and pass `createdAt: Date.now()`. A reused seed would replay
+   the same deal. The `createdAt` part of `handId` keeps record ids unique either way.
 2. While the hand isn't complete: the hero seat waits for UI input, and bot seats call `bots.decideAction`.
 3. `buildHandRecord`, then `record.coach = coach?.analyzeHand(...) ?? null`, then `tracker?.recordHand(record)`.
    Keep the last 10 records in memory for export when the tracker is absent.
@@ -251,6 +280,7 @@ Hand loop in main.js/ui:
 UI: a felt oval table with seats placed around it. Each seat shows an avatar circle (color + initials), name, tier
 badge, stack in bb, bet chips, and cards (CSS/SVG cards, face-down for opponents until showdown). The board and
 pot sit in the center. Hero controls are fold, check/call, a bet/raise slider with ⅓, ½, ¾ and pot presets, and all-in.
+Fold is hidden or disabled when `legal.types` doesn't include it (nothing to call).
 There's a "Next hand" button. Optional panels: hand review (coach results + explanations), export buttons (copy
 last hand, copy last 10, hide-opponent-cards toggle, copy summary), dashboard (stats windows, trends, leaks,
 profitability) and settings (stakes, pool override, live-odds toggle, JSON export/import).
@@ -462,3 +492,30 @@ Note: <PROFITABILITY_DISCLAIMER>
 - Tracker: stats computed from fixture records, CI math, and profitability thresholds.
 - Data: tests use `createMemoryStore`.
 - Integration: scripted full hands through main-style wiring, with no DOM.
+
+## 13. Clarifications
+
+From `REQUESTS-claude.md` (2026-09-28). The sections named are updated to match.
+
+1. **Pots after rake** (§3, §5): `HandResult.pots[].amount` is after rake. Σ pots = Σ awards, and
+   Σ pots + `rakeChips` = total chips contributed.
+2. **Odd chips** (§5): the whole remainder of an uneven split goes to the first winner clockwise from the button.
+3. **Fold needs something to call** (§5 LegalActions, §6 UI): `types` is `['check', …]` when `toCall = 0`
+   and `['fold', 'call', …]` otherwise. The UI hides or disables Fold when it isn't legal.
+4. **SeatView fields** (§5, schemas.js): `street` may be `'showdown'`/`'complete'`, `legal` may be `null`, and the
+   view carries the other GameState fields **except `deck` and `seed`**. Adopted with one change: the request kept
+   `seed`, but the deck is a pure function of the seed, so it can't be in a redacted view.
+5. **Event street for rake/award/uncalled** (§5 HandEvent): `rake`/`award` use `'showdown'` if there was one,
+   otherwise the street the hand ended on. `uncalled` uses the street it happened on.
+6. **`heroAllInEv`** (§5 HandResult): set only when betting has closed for the rest of the hand with board cards
+   to come and hero hasn't folded. Folded players' cards count as unknown.
+7. **Short opening bets** (§5 LegalActions): any opening bet, including an all-in under 1bb, reopens betting.
+   Only raises are checked against the full-raise rule.
+8. **`createHand(scenario, {cards})`** (§6 Engine): optional presets for hole cards and the first board cards.
+   The one-argument form is unchanged and is what main.js uses.
+9. **`handId` from `seed`** (§5, §6 UI): adopted, then replaced by item 10. main.js still uses a fresh seed per
+   hand, but `handId` no longer depends on the seed alone.
+10. **Unique, non-revealing `handId`** (§4, §5, §6, schemas.js; owner decision): `handId` = base36 `createdAt`,
+    a dash, then the first 8 hex characters of a one-way hash of `seed`. `createdAt` is a new ScenarioConfig field
+    that main.js sets to `Date.now()`, so the engine stays pure and reproducible. This fixes two problems: the
+    old format put the raw seed in the id, and repeated 32-bit seeds would have made ids collide.
