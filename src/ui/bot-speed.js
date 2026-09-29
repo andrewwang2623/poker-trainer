@@ -1,5 +1,6 @@
 const STORAGE_KEY = 'felt-theory-bot-speed';
 const PACING_KEY = 'felt-theory-bot-pacing';
+const OUT_SPEED_KEY = 'felt-theory-bot-speed-out';
 
 export const BOT_SPEEDS = Object.freeze([
   { id: 'instant', label: 'Instant', multiplier: 0 },
@@ -9,15 +10,28 @@ export const BOT_SPEEDS = Object.freeze([
   { id: 'study', label: 'Study · 2–4.5 seconds', multiplier: 5 },
 ].map(Object.freeze));
 
+export const OUT_BOT_SPEEDS = Object.freeze(BOT_SPEEDS.map(speed => speed.id === 'normal'
+  ? Object.freeze({ ...speed, label: 'Normal · 1 second' }) : speed));
+
 export function normalizeBotSpeed(value) {
   return BOT_SPEEDS.some(speed => speed.id === value) ? value : 'normal';
 }
 
-export function botActionDelay(speed, random, { folded = false, enabled = true } = {}) {
-  if (folded) return 1000;
+export function botActionDelay(speed, random, { folded = false, enabled = true, outSpeed = 'normal' } = {}) {
+  if (folded) return normalizeBotSpeed(outSpeed) === 'normal' ? 1000 : botActionDelay(outSpeed, random);
   if (!enabled) return 0;
   const multiplier = BOT_SPEEDS.find(option => option.id === normalizeBotSpeed(speed)).multiplier;
   return Math.round((400 + Math.floor(random * 501)) * multiplier);
+}
+
+export function loadOutBotSpeed(storage) {
+  try { return normalizeBotSpeed((storage ?? globalThis.localStorage)?.getItem(OUT_SPEED_KEY)); }
+  catch { return 'normal'; }
+}
+
+export function saveOutBotSpeed(value, storage) {
+  try { (storage ?? globalThis.localStorage)?.setItem(OUT_SPEED_KEY, normalizeBotSpeed(value)); }
+  catch { /* Speed changes still work when browser storage is blocked. */ }
 }
 
 export function loadBotPacing(storage) {

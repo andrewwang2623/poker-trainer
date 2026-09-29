@@ -8,18 +8,20 @@ import { renderLog } from './log.js';
 import { renderSettings } from './settings.js';
 import { applyAppearance, loadAppearance, saveAppearance } from './appearance.js';
 import { createExportPanel } from './export.js';
-import { loadBotPacing, loadBotSpeed, normalizeBotSpeed, saveBotPacing, saveBotSpeed } from './bot-speed.js';
+import { loadBotPacing, loadBotSpeed, loadOutBotSpeed, normalizeBotSpeed, saveBotPacing, saveBotSpeed, saveOutBotSpeed } from './bot-speed.js';
 
 /** Mounts the table UI against a session adapter exposing state, legal actions, act and nextHand. */
 export function mountApp(rootEl, app = {}) {
   let settings = { stakes: 'micro', poolOverride: null, ...app.settings };
   settings.botSpeed = normalizeBotSpeed(settings.botSpeed ?? loadBotSpeed());
   settings.botPacing = settings.botPacing ?? loadBotPacing();
+  settings.outBotSpeed = normalizeBotSpeed(settings.outBotSpeed ?? loadOutBotSpeed());
   let appearance = loadAppearance();
   applyAppearance(appearance);
   const session = app.session ?? createMockSession(settings);
   session.setBotSpeed?.(settings.botSpeed);
   session.setBotPacing?.(settings.botPacing);
+  session.setOutBotSpeed?.(settings.outBotSpeed);
   const boardReveal = createBoardReveal();
   const exportPanel = app.features?.export && app.exporter ? createExportPanel(app, session) : null;
   let timerSettings = loadTimer();
@@ -87,6 +89,11 @@ export function mountApp(rootEl, app = {}) {
     const right = element('aside', 'sidebar');
     right.append(renderLog(state), renderSettings(settings, next => {
       const stakeChanged = next.stakes !== settings.stakes;
+      if (next.outBotSpeed !== settings.outBotSpeed) {
+        next.outBotSpeed = normalizeBotSpeed(next.outBotSpeed);
+        session.setOutBotSpeed?.(next.outBotSpeed);
+        saveOutBotSpeed(next.outBotSpeed);
+      }
       if (next.botPacing !== settings.botPacing) {
         session.setBotPacing?.(next.botPacing);
         saveBotPacing(next.botPacing);

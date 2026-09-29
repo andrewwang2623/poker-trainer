@@ -1,7 +1,7 @@
 import { STAKES, TIER_LABELS, TIERS } from '../shared/schemas.js';
 import { element } from './dom.js';
 import { LOOKS, TEXT_SIZES, THEMES } from './appearance.js';
-import { BOT_SPEEDS, normalizeBotSpeed } from './bot-speed.js';
+import { BOT_SPEEDS, OUT_BOT_SPEEDS, normalizeBotSpeed } from './bot-speed.js';
 
 function percentages(pool) {
   const whole = TIERS.map(tier => Math.round((pool[tier] ?? 0) * 100));
@@ -72,7 +72,21 @@ export function renderSettings(settings, onChange, appearance, onAppearanceChang
   });
   speedSelect.addEventListener('change', () => onChange({ ...settings, botSpeed: speedSelect.value }));
   section.append(pacingRow, speedLabel, speedSelect,
-    element('p', 'panel-note', 'Off: instant AI actions while you’re in. After you fold: 1 second per AI action, regardless of this setting. All-in still counts as in the hand. Changes apply after the current wait.'));
+    element('p', 'panel-note', 'Off: instant AI actions while you’re in. All-in still counts as in the hand.'));
+
+  const outSpeedLabel = element('label', 'field-label', 'AI speed after I fold');
+  outSpeedLabel.htmlFor = 'bot-speed-out';
+  const outSpeedSelect = element('select', 'select-input');
+  outSpeedSelect.id = outSpeedLabel.htmlFor;
+  for (const speed of OUT_BOT_SPEEDS) {
+    const option = element('option', '', speed.label);
+    option.value = speed.id;
+    outSpeedSelect.append(option);
+  }
+  outSpeedSelect.value = normalizeBotSpeed(settings.outBotSpeed);
+  outSpeedSelect.addEventListener('change', () => onChange({ ...settings, outBotSpeed: outSpeedSelect.value }));
+  section.append(outSpeedLabel, outSpeedSelect,
+    element('p', 'panel-note', 'Independent of your in-hand speed. Choose Instant to turn pauses off after folding. Speed changes apply after the current wait.'));
 
   const timerRow = element('label', 'switch-row');
   const timerToggle = element('input', 'switch-input');

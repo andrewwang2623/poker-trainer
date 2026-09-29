@@ -16,6 +16,7 @@ export function createEngineSession(engine, bots, initialSettings = {}, options 
   let settings = initialSettings;
   let botSpeed = normalizeBotSpeed(initialSettings.botSpeed);
   let botPacing = initialSettings.botPacing !== false;
+  let outBotSpeed = normalizeBotSpeed(initialSettings.outBotSpeed);
   let state;
   let botRng;
   let createdAt;
@@ -79,7 +80,7 @@ export function createEngineSession(engine, bots, initialSettings = {}, options 
         if (seat === null) break;
         // Consume the same random draw at every speed to preserve seeded decisions.
         await delay(botActionDelay(botSpeed, botRng(), {
-          folded: state.players[state.heroSeat].folded, enabled: botPacing,
+          folded: state.players[state.heroSeat].folded, enabled: botPacing, outSpeed: outBotSpeed,
         }));
         const view = engine.getView(state, seat);
         const action = bots.decideAction(view, state.players[seat].profile, { rng: botRng, heroStats: null });
@@ -100,6 +101,7 @@ export function createEngineSession(engine, bots, initialSettings = {}, options 
     getRecentHands: () => recentHands.slice(),
     setBotSpeed(value) { botSpeed = normalizeBotSpeed(value); },
     setBotPacing(value) { botPacing = value !== false; },
+    setOutBotSpeed(value) { outBotSpeed = normalizeBotSpeed(value); },
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
     async act(action) {
       if (pending || state.actingSeat !== state.heroSeat) throw new RangeError('Hero is not acting');

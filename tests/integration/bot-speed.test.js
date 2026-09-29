@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as engine from '../../src/engine/index.js';
 import * as placeholder from '../../src/bots/placeholder.js';
 import { createEngineSession } from '../../src/ui/session.js';
-import { BOT_SPEEDS, botActionDelay, loadBotPacing, loadBotSpeed, normalizeBotSpeed, saveBotPacing, saveBotSpeed } from '../../src/ui/bot-speed.js';
+import { BOT_SPEEDS, botActionDelay, loadBotPacing, loadBotSpeed, loadOutBotSpeed, normalizeBotSpeed, saveBotPacing, saveBotSpeed, saveOutBotSpeed } from '../../src/ui/bot-speed.js';
 
 const fixedEngine = {
   ...engine,
@@ -84,8 +84,8 @@ test('changing playback speed preserves cards and the seeded bot decision stream
   }
 });
 
-test('folded hero always gets one-second actions, even with pacing off or instant selected', async () => {
-  for (const speed of ['instant', 'study']) {
+test('post-fold speed is independent of in-hand pacing and resets to in-hand speed next hand', async () => {
+  for (const speed of ['instant', 'study']) for (const outSpeed of ['normal', 'instant', 'study']) {
     const waits = [];
     const bots = { ...placeholder, decideAction(view, profile, context) {
       if (view.street === 'preflop' && view.seat === 0 && view.legal.types.includes('raise')) {
@@ -99,15 +99,33 @@ test('folded hero always gets one-second actions, even with pacing off or instan
     assert.ok(waits.length > 0);
     assert.ok(waits.every(ms => ms === 0));
     const beforeFold = waits.length;
+    session.setOutBotSpeed(outSpeed);
     await session.act({ type: 'fold' });
     assert.equal(session.getState().players[2].folded, true);
     assert.ok(waits.length > beforeFold);
-    assert.ok(waits.slice(beforeFold).every(ms => ms === 1000));
+    assert.ok(waits.slice(beforeFold).every(ms => outSpeed === 'normal' ? ms === 1000
+      : outSpeed === 'instant' ? ms === 0 : ms >= 2000 && ms <= 4500));
     const beforeNext = waits.length;
     session.setBotPacing(true);
     await session.nextHand({ stakes: 'micro' });
     assert.ok(waits.length > beforeNext);
     assert.ok(waits.slice(beforeNext).every(ms => speed === 'instant' ? ms === 0 : ms >= 2000));
+  }
+});
+
+test('post-fold speed persists separately with a one-second default and safe storage fallback', () => {
+  const saved = new Map();
+  const storage = { getItem: key => saved.get(key), setItem: (key, value) => saved.set(key, value) };
+  assert.equal(loadOutBotSpeed(storage), 'normal');
+  saveBotSpeed('study', storage);
+  saveOutBotSpeed('instant', storage);
+  assert.equal(loadOutBotSpeed(storage), 'instant');
+  assert.equal(loadBotSpeed(storage), 'study');
+  assert.equal(loadOutBotSpeed({ getItem: () => 'invalid' }), 'normal');
+  assert.equal(loadOutBotSpeed({ getItem() { throw Error('blocked'); } }), 'normal');
+  assert.doesNotThrow(() => saveOutBotSpeed('slow', { setItem() { throw Error('blocked'); } }));
+  for (const outSpeed of ['fast', 'slow']) {
+    assert.equal(botActionDelay('study', 0.5, { folded: true, enabled: false, outSpeed }), botActionDelay(outSpeed, 0.5));
   }
 });
 
