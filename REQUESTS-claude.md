@@ -74,3 +74,44 @@ should rely on them; if any is wrong, tell me and I'll change the engine.
 4. FYI: `TIER_RANGE_CHARTS.lowReg` is tighter than the base chart (per tests/data). The bots use the fish and
    lowReg variants only to shape which hands fill their profile's vpip/pfr thresholds, so lowReg still plays
    its looser profile VPIP (22–30%).
+
+## 2026-09-29 — Native live UTG straddle (owner decision; engine and bots implemented)
+
+**For the SPEC owner: wording for SPEC.md and schemas.js.**
+1. **§4 Scenario generation / §6 Engine:** `createScenario({stakes, poolOverride?, seed, createdAt, straddle?}, rng)`.
+   `straddle = {enabled: boolean, heroChance: number 0–1}`, default `{enabled: false, heroChance: 0}`. When
+   enabled at a 3+ player table, the first seat after the BB straddles 2bb live: with `heroChance` if hero sits
+   there, otherwise at `STRADDLE_RATES[tier]`. The draw is one value from `createRng(deriveSeed(seed, 'straddle'))`,
+   so no other stream shifts. A UTG stack ≤ 2bb never straddles. The result is `ScenarioConfig.straddleSeat`.
+2. **schemas.js constants:** please move `STRADDLE_RATES = {fish: 0.25, lowReg: 0.10, midReg: 0.05,
+   toughReg: 0.03}` next to `TIERS`/`TIER_LABELS`, and optionally `STRADDLE_BB = 2`. They live in
+   `src/engine/scenario.js` for now (`STRADDLE_RATES`, `STRADDLE_CHIPS`), re-exported from `src/engine/index.js`.
+   I'll switch the engine to import them once they're in schemas.js.
+3. **Typedefs:**
+   - `ScenarioConfig.straddleSeat: number|null`: the straddling seat, or null.
+   - `GameState.straddleSeat: number|null`. SeatView carries it too, since it's public information.
+   - `HandEvent` postBlind: `blind: 'SB'|'BB'|'straddle'`.
+   - `HandRecord.straddleSeat: number|null`.
+   - `HeroStatFlags.straddled: boolean`: hero posted the straddle.
+   - `HeroStatFlags.facedStraddle: boolean`: another seat straddled.
+4. **§5 semantics:** the straddle is posted after SB and BB, before hole cards. It sets `currentBet = 2bb` and
+   `lastRaiseSize = 2bb`, so the min raise is to 4bb. Preflop action starts left of the straddler, who keeps a
+   check/raise option like the BB. Postflop order, rake, side pots and the uncalled-bet return are unchanged: in
+   a walk the straddler gets its uncalled 1bb back and there's no rake. The straddle is a forced post, so it
+   never counts as VPIP, PFR, a 3-bet opportunity or a hero decision. `heroPosition` keeps the seat's normal
+   label (e.g. `UTG`).
+5. **§7 Bots:** preflop, the straddle is the effective big blind. Opens are 2.5 (SB 3) effective blinds plus 1 per
+   limper, 3-bets are 3×/4× the current bet, depth bands are read in effective blinds, and the straddler uses
+   the BB chart row for its option.
+6. **§10 Export:** the verb for the post is `posts straddle X`.
+
+**For Astra: switch the UI to the native straddle.**
+1. Settings: replace the current straddle setting with **straddles on/off** plus a **hero straddle chance**
+   (0–100%). Pass `straddle: {enabled, heroChance: percent / 100}` to `engine.createScenario`. Bots now straddle
+   too, at their tier rates, whenever straddles are on; the settings help text should say so.
+2. Delete `src/ui/straddle.js`'s adapter code: `maybePostStraddle` in session.js, `straddlePost` in log.js and
+   table.js, and the compatibility branch in `src/export/index.js`, plus the tests that exercise the adapter
+   (`tests/integration/straddle.test.js`, the straddle cases in `hand-reveal.test.js`). Keep only what the new
+   settings need.
+3. Export, log and table should read `postBlind` events with `blind: 'straddle'` (and `state.straddleSeat` /
+   `record.straddleSeat` for the badge). Any seat can now straddle, not just hero.
