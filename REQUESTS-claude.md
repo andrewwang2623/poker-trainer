@@ -175,3 +175,16 @@ Fixed in `src/bots/strategy/blinds.js` + `preflop.js`; checked by `tests/bots/bl
    hands, even mix: lowReg 30 vs 26, midReg 29 vs 23, toughReg 30 vs 23). The tier test now allows VPIP up
    to +8pp over target (PFR and 3-bet stay ±5pp). Either raise the §7 reg VPIP ranges (~+5pp) or accept
    the looser bound; I haven't forced VPIP back down elsewhere.
+
+## 2026-09-29 — Opener vs 3-bet (bots; SPEC §7 correction, owner decision)
+
+§7 says "Facing a 3-bet or more: continue with the top 40% of the `threeBet` range and 4-bet the top 15% of
+it". The owner confirmed that's a spec error: it made openers fold ~90% (midReg/toughReg) to a 3-bet.
+Implemented instead (`src/bots/strategy/vsThreeBet.js`, `preflop.js`), for regs only (fish unchanged):
+
+**For the SPEC owner (please update §7):** the opener facing a 3-bet continues (call or 4-bet) with the top
+share of **its own opening range from that position** (for chart bots, the narrower iso range when it raised
+over limpers): lowReg 40%, midReg 48%, toughReg 50% out of position, +4pp in position, +3pp heads-up, scaled
+by the price vs a standard 3×/4× 3-bet and trimmed per caller. It 4-bets the top 10% / 11% / 12% of that
+range. Result (full bot-only games): fold to 3-bet lowReg ~56%, midReg ~52%, toughReg ~45%. Cold spots
+(facing an open and a 3-bet without having opened) and 4-bets+ are unchanged.
