@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   evCheck, evCall, evBet, foldEstimate, candidateActions, evaluateCandidates, severityOf, sizeKey,
-  REALIZATION, CALLED_EQUITY, overbetEquity, uncalledExcess,
+  REALIZATION, CALLED_EQUITY, overbetEquity, uncalledExcess, bountyPayoutBb,
 } from '../../src/coach/ev.js';
 
 const close = (a, b, eps = 1e-9) => assert.ok(Math.abs(a - b) < eps, `${a} vs ${b}`);
@@ -119,8 +119,8 @@ test('EV caps what an all-in can win at what opponents can match', () => {
 test('bounty EV: P(win) × payout on continuing actions; fold wins count only for showdownOrFold', () => {
   const cands = candidateActions(flopSpot(), null);
   const plain = evaluateCandidates(flopSpot(), cands);
-  const orFold = evaluateCandidates(flopSpot({ bounties: [{ bb: 10, paysOnFold: true }] }), cands);
-  const onlySd = evaluateCandidates(flopSpot({ bounties: [{ bb: 10, paysOnFold: false }] }), cands);
+  const orFold = evaluateCandidates(flopSpot({ bounties: [{ amountChips: 1000, paysOnFold: true }] }), cands);
+  const onlySd = evaluateCandidates(flopSpot({ bounties: [{ amountChips: 1000, paysOnFold: false }] }), cands);
   const byKey = (list) => Object.fromEntries(list.map((c) => [c.key, c]));
   const [p, f, s] = [byKey(plain), byKey(orFold), byKey(onlySd)];
   close(f.check.ev - p.check.ev, 0.5 * 10, 0.011);
@@ -179,4 +179,34 @@ test('the chosen size is evaluated at its exact amount, even when it rounds to a
   assert.notEqual(exact.ev, evs.find((c) => c.key === 'bet:0.5').ev);
   // An exact preset amount still reuses the preset.
   assert.equal(candidateActions(flopSpot(), { type: 'bet', amount: 500 }).find((c) => c.chosen).key, 'bet:0.5');
+});
+
+test('bounty payouts come from each payer\'s stack after the pot: returned chips count, called ones don\'t', () => {
+  // Hand bounty first, then the card bounty from what's left: a 1.5bb stack pays 1.5bb in all.
+  assert.equal(bountyPayoutBb([{ amountChips: 200 }, { amountChips: 200 }], [150, 10000]), 1.5 + 4);
+
+  // Hero calls a 100bb shove for 20bb: 80bb comes back to the shover, who can then pay 2bb.
+  const call = {
+    legal: { types: ['fold', 'call'], toCall: 2000, minTo: 0, maxTo: 2000 },
+    pot: 10100, heroCommitted: 100, street: 'preflop', inPosition: false, equity: 0.4, winOrTie: 0.4,
+    heroSeat: 1, bounties: [{ amountChips: 200, paysOnFold: true }],
+    seats: [
+      { seat: 0, folded: false, allIn: true, stack: 0, committedStreet: 10000, stats: { foldToBet: 0.4 } },
+      { seat: 1, folded: false, allIn: false, stack: 2000, committedStreet: 100 },
+    ],
+  };
+  call.opponents = [call.seats[0]];
+  const withBounty = evaluateCandidates(call, [{ key: 'call', type: 'call', to: null }])[0].ev;
+  const without = evaluateCandidates({ ...call, bounties: [] }, [{ key: 'call', type: 'call', to: null }])[0].ev;
+  close(withBounty - without, 0.4 * 2, 0.011);
+
+  // Hero shoves over a 3bb stack: called, the payer is all-in and pays nothing; folding, it pays 2bb.
+  const spot = flopSpot({
+    heroSeat: 0, winOrTie: 0.5, bounties: [{ amountChips: 200, paysOnFold: true }],
+    opponents: [{ seat: 1, folded: false, allIn: false, stack: 300, committedStreet: 0, stats: { foldToBet: 0.4 } }],
+  });
+  spot.seats = [{ seat: 0, stack: 10000, committedStreet: 0 }, spot.opponents[0]];
+  const [shove] = evaluateCandidates(spot, [{ key: 'allIn', type: 'bet', to: 10000 }]);
+  const [plain] = evaluateCandidates({ ...spot, bounties: [] }, [{ key: 'allIn', type: 'bet', to: 10000 }]);
+  close(shove.ev - plain.ev, 2 * shove.fold, 0.011);
 });

@@ -39,12 +39,11 @@ export function analyzeHand(record, { rng, iterations = DEFAULT_ITERATIONS } = {
   return { handId: record.id, version: COACH_VERSION, decisions, flags, totalEvLossBb, grade };
 }
 
-/** Live bounties hero holds, as EV terms: total payout in bb and whether a fold win pays it. */
+/** Live bounties hero holds, hand first (§15 order), as EV terms for evaluateCandidates. */
 function heldBounties(record, ctx) {
   const hole = ctx.decision.holeCards;
   return (record.bounties ?? []).filter((b) => holdsBounty(hole, b)).map((b) => ({
-    bb: ctx.seats.reduce((s, p) => s + (p.seat === record.heroSeat ? 0 : Math.min(b.amountChips, p.stack)), 0) / 100,
-    paysOnFold: b.paysOn === 'showdownOrFold',
+    amountChips: b.amountChips, paysOnFold: b.paysOn === 'showdownOrFold',
   }));
 }
 
@@ -63,7 +62,8 @@ function analyzeDecision(record, ctx, rng, iterations) {
   const matchedPot = ctx.pot - uncalledExcess(ctx);
   const potOdds = ctx.legal.toCall > 0 ? ctx.legal.toCall / (matchedPot + ctx.legal.toCall) : null;
   const bounties = heldBounties(record, ctx);
-  const spot = { ...ctx, opponents, equity, inPosition: d.inPosition, bounties };
+  // A tie for the main pot still qualifies for a bounty, so its chance is win + tie, not equity.
+  const spot = { ...ctx, opponents, equity, winOrTie: eq.win + eq.tie, inPosition: d.inPosition, bounties };
 
   const evs = evaluateCandidates(spot, candidateActions(ctx, d.action));
   const chosen = evs.find((c) => c.chosen);

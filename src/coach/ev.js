@@ -146,11 +146,34 @@ export function candidateActions(spot, chosen) {
 }
 
 /**
+ * Bounty chips hero collects on winning (§15), in bb: bounties in order (hand first), every other
+ * dealt-in seat paying min(amountChips, its stack after the pot is awarded), each later bounty from
+ * what the earlier ones left. Chips a payer may win back in a side pot aren't counted.
+ * @param {{amountChips: number}[]} bounties
+ * @param {number[]} stacks  each payer's stack after the award
+ */
+export function bountyPayoutBb(bounties, stacks) {
+  const left = stacks.map((x) => Math.max(0, x));
+  let total = 0;
+  for (const b of bounties) {
+    for (let i = 0; i < left.length; i++) {
+      const pay = Math.min(b.amountChips, left[i]);
+      left[i] -= pay;
+      total += pay;
+    }
+  }
+  return total / 100;
+}
+
+/**
  * EV in bb of each candidate.
- * Continuing actions add the expected bounty (§15): P(winning the main pot) × the bounty payout,
- * where a win by folds only counts for 'showdownOrFold'.
- * @param {Object} spot  DecisionContext plus {equity, inPosition, bounties}; opponents carry `stats`.
- *   bounties: [{bb, paysOnFold}] for each live bounty hero holds (bb = total payout to hero).
+ * Continuing actions add the expected bounty (§15): P(winning or tying the main pot) × the payout
+ * from the payers' stacks after that branch's pot, where a win by folds only counts for
+ * 'showdownOrFold'.
+ * @param {Object} spot  DecisionContext plus {equity, winOrTie, inPosition, bounties}; opponents
+ *   carry `stats`. winOrTie: P(hero wins or ties the main pot), default `equity`. bounties:
+ *   [{amountChips, paysOnFold}] for each live bounty hero holds, hand first. Payers are `seats`
+ *   other than `heroSeat` (every seat dealt in), or `opponents` when there are no seats.
  * @returns {{key: string, type: string, to: number|null, ev: number, fold: number|null, addBb: number}[]}
  */
 export function evaluateCandidates(spot, candidates) {
@@ -163,29 +186,45 @@ export function evaluateCandidates(spot, candidates) {
   const reach = Math.max(0, ...opps.map((o) => o.reach));
   const streetR = spot.street === 'river' ? REALIZATION.final
     : spot.inPosition ? REALIZATION.inPosition : REALIZATION.outOfPosition;
+
   const bounties = spot.bounties ?? [];
-  const bounty = bounties.reduce((s, b) => s + b.bb, 0);
-  const foldPaid = bounties.reduce((s, b) => s + (b.paysOnFold ? b.bb : 0), 0);
+  const foldBounties = bounties.filter((b) => b.paysOnFold);
+  const Q = spot.winOrTie ?? E;
+  const payers = spot.seats ? spot.seats.filter((s) => s.seat !== spot.heroSeat) : spot.opponents;
+  const standing = payers.map((p) => p.stack);
+  // After hero calls: the top committer gets back what nobody matched.
+  const afterCall = (() => {
+    const levels = [spot.heroCommitted + spot.legal.toCall, ...payers.map((p) => p.committedStreet)];
+    const [top, second = 0] = levels.slice().sort((a, b) => b - a);
+    return payers.map((p) => p.stack + (!p.folded && p.committedStreet === top ? top - second : 0));
+  })();
+  // After a bet or raise to `to` is called: live opponents put in what they can of it.
+  const afterCalled = (to) => payers.map((p) => (p.folded ? p.stack
+    : p.stack - Math.min(Math.max(0, to - p.committedStreet), p.stack)));
+  const payout = (list, stacks) => (list.length ? bountyPayoutBb(list, stacks) : 0);
+
   return candidates.map((c) => {
     let ev = 0;
     let fold = null;
     let addBb = 0;
     if (c.type === 'check') {
-      ev = evCheck(E, P, streetR) + bounty * E;
+      ev = evCheck(E, P, streetR) + payout(bounties, standing) * Q;
     } else if (c.type === 'call') {
       const heroAllIn = spot.legal.toCall >= spot.legal.maxTo - spot.heroCommitted;
       const noMoreBetting = heroAllIn || opps.every((o) => o.allIn);
-      ev = evCall(E, P - uncalledExcess(spot) / 100, C, noMoreBetting ? REALIZATION.final : streetR) + bounty * E;
+      ev = evCall(E, P - uncalledExcess(spot) / 100, C, noMoreBetting ? REALIZATION.final : streetR) +
+        payout(bounties, afterCall) * Q;
       addBb = C;
     } else if (c.type === 'bet' || c.type === 'raise') {
       const A = (c.to - spot.heroCommitted) / 100;
       // What opponents can match: chips over that come back, so they neither win nor fold anyone.
       const M = Math.max((Math.min(c.to, reach) - spot.heroCommitted) / 100, C);
       const R = c.to >= spot.legal.maxTo ? REALIZATION.final : streetR;
-      const Ec = overbetEquity(E, (M - C) / (P + C));
+      const frac = (M - C) / (P + C);
       fold = foldEstimate(opps, M, P);
-      ev = evBet(Ec, P, M, R, fold);
-      ev += foldPaid * fold + bounty * (1 - fold) * CALLED_EQUITY * Ec;
+      ev = evBet(overbetEquity(E, frac), P, M, R, fold);
+      ev += payout(foldBounties, standing) * fold +
+        payout(bounties, afterCalled(c.to)) * (1 - fold) * CALLED_EQUITY * overbetEquity(Q, frac);
       addBb = A;
     }
     return { ...c, ev: round2(ev), fold, addBb };

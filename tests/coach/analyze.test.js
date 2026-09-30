@@ -9,6 +9,18 @@ import { decideAction, createBotProfile } from '../../src/bots/index.js';
 import { FLAG_IDS, FLAG_SEVERITIES } from '../../src/shared/schemas.js';
 import { analyzeHand, liveOdds, detectPatterns } from '../../src/coach/index.js';
 import { makeHand, play, recordOf, PROFILES, coachRng, flagIds, flagsAt } from './_hands.js';
+import { decisionContexts } from '../../src/coach/context.js';
+import { opponentRanges } from '../../src/coach/villainRanges.js';
+
+/** P(hero wins or ties) at a record's first decision, from the same rng stream and ranges as the coach. */
+function firstWinOrTie(record) {
+  const [ctx] = decisionContexts(record);
+  const ranges = opponentRanges({ events: ctx.events, street: ctx.street, board: ctx.board,
+    heroCards: ctx.decision.holeCards, opponents: ctx.opponents });
+  const eq = computeEquity({ hero: ctx.decision.holeCards, board: ctx.board, villains: ranges.map((r) => r.range),
+    iterations: 2000, rng: coachRng(record) });
+  return eq.win + eq.tie;
+}
 
 /** §8.3 data fields per hand-level flag. */
 const DATA_KEYS = {
@@ -248,7 +260,10 @@ test('bounty hands: no out-of-range flags for playing them, expected bounty adde
   assert.equal(held.decisions[0].equity, E);
   const gap = (key) => held.decisions[0].evByActionBb[key] - plain.decisions[0].evByActionBb[key];
   assert.equal(gap('fold'), 0);
-  assert.ok(Math.abs(gap('call') - E * 10) < 0.02, `call gap ${gap('call')}`);
+  // A tie for the main pot qualifies too: P(win or tie), not the pot-share equity.
+  const Q = firstWinOrTie(hand(bounty('hand', '72o')));
+  assert.ok(Q > E);
+  assert.ok(Math.abs(gap('call') - Q * 10) < 0.02, `call gap ${gap('call')} vs ${Q * 10}`);
   assert.ok(gap('raise:0.5') > gap('call'), 'fold wins pay with showdownOrFold');
 
   // A card bounty works the same; showdownOnly pays nothing for fold wins.
@@ -256,7 +271,7 @@ test('bounty hands: no out-of-range flags for playing them, expected bounty adde
   assert.deepEqual(flagIds(card, 0), []);
   const onlySd = analyze(hand(bounty('card', '7c', 'showdownOnly')));
   const sdGap = (key) => onlySd.decisions[0].evByActionBb[key] - plain.decisions[0].evByActionBb[key];
-  assert.ok(Math.abs(sdGap('call') - E * 10) < 0.02);
+  assert.ok(Math.abs(sdGap('call') - Q * 10) < 0.02);
   assert.ok(sdGap('raise:0.5') < sdGap('call'), 'showdownOnly: only the called share can win it');
 
   // A bounty someone else could hold changes nothing for hero.
@@ -387,4 +402,29 @@ test('sizing thresholds compare the exact bet size, not the rounded percentage',
     [[0, 'raise', 10], [1, 'call'], [1, 'bet', 11.2]]));
   assert.equal(wet.decisions[1].texture, 'wet');
   assert.deepEqual(flagIds(wet, 1).filter((id) => id.startsWith('SZ_')), []);
+});
+
+test('bounty EV counts a tie for the main pot as qualifying (§15: at least a share of pots[0])', () => {
+  // Royal flush on board: hero always splits the pot, so equity is 50% but the card bounty is certain.
+  const record = recordOf(HU({ hero: 1, holes: { 1: ['2c', '3d'] }, board: ['As', 'Ks', 'Qs', 'Js', 'Ts'],
+    bounties: [{ type: 'card', target: '2c', amountChips: 200, paysOn: 'showdownOnly' }] }), [
+    [0, 'call'], [1, 'check'], [1, 'check'], [0, 'check'], [1, 'check'], [0, 'check'], [1, 'check'],
+  ]);
+  const river = analyze(record).decisions[3];
+  assert.equal(river.equity, 0.5);
+  assert.equal(river.evByActionBb.check, 0.5 * 2 + 2, 'half the 2bb pot plus the whole 2bb bounty');
+});
+
+test('bounty EV caps each payment at the payer\'s stack after the pot is awarded', () => {
+  // River: villain has 12bb left, hero shoves 97bb, showdownOnly. A villain who calls is all-in,
+  // so after losing the pot it has nothing left to pay: the shove gains nothing from the bounty.
+  const hand = (bounties) => recordOf(HU({ hero: 1, stacksBb: [15, 100], holes: { 1: ['7c', '7d'] },
+    board: ['Kd', '9h', '4s', 'Jc', '3h'], bounties }), [
+    [0, 'raise', 3], [1, 'call'], [1, 'check'], [0, 'check'], [1, 'check'], [0, 'check'], [1, 'bet', 97],
+  ]);
+  const plain = analyze(hand([])).decisions[3];
+  const held = analyze(hand([{ type: 'card', target: '7c', amountChips: 200, paysOn: 'showdownOnly' }])).decisions[3];
+  assert.equal(held.equity, plain.equity);
+  assert.equal(held.evByActionBb.allIn, plain.evByActionBb.allIn);
+  assert.ok(held.evByActionBb.check > plain.evByActionBb.check, 'checking keeps its 12bb, so it still pays');
 });
