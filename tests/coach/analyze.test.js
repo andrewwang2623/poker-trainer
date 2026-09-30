@@ -234,7 +234,8 @@ test('straddled pots: posts are never decisions, roles and sizes follow the stra
   ]);
   assert.equal(rb.flags.find((f) => f.id === 'PF_OPEN_SIZE').severity, 'info');
   assert.equal(rb.totalEvLossBb, 0.4);
-  assert.equal(rb.grade, 'minor');
+  assert.deepEqual(rb.flags.map((f) => f.severity), ['info', 'info']);
+  assert.equal(rb.grade, 'clean', 'info flags alone stay clean (§5)');
 
   // A straddle walk: hero posts and never decides.
   const walk = recordOf(makeHand({ hero: 3, straddleSeat: 3 }), [[4, 'fold'], [5, 'fold'], [0, 'fold'], [1, 'fold'], [2, 'fold']]);
@@ -308,6 +309,7 @@ test('every flag in random bot-played hands matches the §8.3 contract', () => {
   const tiers = ['fish', 'lowReg', 'midReg', 'toughReg'];
   const records = [];
   const seen = new Set();
+  const grades = new Set();
   for (let seed = 1; seed <= 120; seed++) {
     const sc = createScenario({
       stakes: 'low', seed, createdAt: 1790000000000 + seed,
@@ -347,9 +349,11 @@ test('every flag in random bot-played hands matches the §8.3 contract', () => {
       assert.ok(f.evLossBb >= 0);
       assert.ok(f.oppTier === null || tiers.includes(f.oppTier));
     }
-    const hasMajor = result.flags.some((f) => f.severity === 'major');
-    assert.equal(result.grade, hasMajor || result.totalEvLossBb >= 5 ? 'major' : result.flags.length ? 'minor' : 'clean');
+    const has = (severity) => result.flags.some((f) => f.severity === severity);
+    assert.equal(result.grade, has('major') || result.totalEvLossBb >= 5 ? 'major' : has('minor') ? 'minor' : 'clean');
+    grades.add(result.grade);
   }
+  assert.deepEqual([...grades].sort(), ['clean', 'major', 'minor'], 'every grade occurs');
   assert.ok(seen.size >= 8, `only saw ${[...seen]}`);
   for (const f of detectPatterns(records, 'low')) assert.ok(f.id.startsWith('PAT_') && f.street === null);
 });

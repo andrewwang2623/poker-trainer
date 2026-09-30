@@ -34,8 +34,9 @@ export function analyzeHand(record, { rng, iterations = DEFAULT_ITERATIONS } = {
     flags.push(...decisionFlags(a));
   }
   const totalEvLossBb = r2(decisions.reduce((s, d) => s + d.evLossBb, 0));
-  const grade = flags.some((f) => f.severity === 'major') || totalEvLossBb >= GRADE_MAJOR_LOSS ? 'major'
-    : flags.length ? 'minor' : 'clean';
+  // §5: info flags (sizing and chart notes) alone leave a hand clean.
+  const has = (severity) => flags.some((f) => f.severity === severity);
+  const grade = has('major') || totalEvLossBb >= GRADE_MAJOR_LOSS ? 'major' : has('minor') ? 'minor' : 'clean';
   return { handId: record.id, version: COACH_VERSION, decisions, flags, totalEvLossBb, grade };
 }
 
