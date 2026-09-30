@@ -21,3 +21,10 @@ Resolved: the engine carries `createdAt` and generates the required SHA-256-base
 Both owned storage adapters implement it now: one IndexedDB readwrite transaction, or preparation of a
 complete cloned map before swapping memory storage. Tracker replace imports require this operation and
 reject unsupported adapters before modifying data; merge imports keep using `putMany`.
+
+## Nullable EV-loss trend
+
+2026-09-30: please change `StatsSummary.trend.evLossPer100Delta` to `number|null` in
+`src/shared/schemas.js`. Per the owner's review decision, the delta is unavailable unless both compared
+windows contain coached hands. The tracker returns null and dashboard/summary export display an em dash;
+observed zero loss in two coached windows remains a numeric zero.

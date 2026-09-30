@@ -2,7 +2,7 @@ import { STAKES, STATS_WINDOWS } from '../shared/schemas.js';
 import { element } from './dom.js';
 
 const number = value => value == null ? '—' : value.toFixed(1);
-const signed = value => `${value >= 0 ? '+' : ''}${number(value)}`;
+const signed = value => value == null ? '—' : `${value >= 0 ? '+' : ''}${number(value)}`;
 const percent = value => value == null ? '—' : `${Math.round(100 * value)}%`;
 const evNet = record => record.heroEvNetBb ?? record.heroNetBb;
 const windowName = value => typeof value === 'number' ? `Last ${value.toLocaleString('en-US')}` : value === 'session' ? 'Session' : 'All hands';
@@ -94,7 +94,7 @@ export function renderDashboard({ stats, records, patterns, patternError }, expl
   content.append(cards, element('p', '', stats.hands > 1
     ? `All-in EV win rate 95% CI: ${stats.evAdjCi95.map(signed).join(' to ')} bb/100`
     : 'At least two hands are needed for a sample variance confidence interval.'), renderTrendChart(records));
-  if (stats.trend) content.append(element('p', 'window-trend', `Versus previous ${stats.window} hands: bb/100 ${signed(stats.trend.bbPer100Delta)} · EV loss/100 ${signed(stats.trend.evLossPer100Delta)} · VPIP ${stats.trend.vpipDelta == null ? '—' : `${signed(stats.trend.vpipDelta * 100)} percentage points`}`));
+  if (stats.trend) content.append(element('p', 'window-trend', `Versus previous ${stats.window} hands: bb/100 ${signed(stats.trend.bbPer100Delta)} · EV loss/100 ${stats.coachedHands ? signed(stats.trend.evLossPer100Delta) : '—'} · VPIP ${stats.trend.vpipDelta == null ? '—' : `${signed(stats.trend.vpipDelta * 100)} percentage points`}`));
   const leaks = element('section', 'panel dashboard-leaks'); leaks.append(element('h2', '', 'Top leaks'));
   if (!stats.topLeaks.length) leaks.append(element('p', '', stats.coachedHands ? 'No leaks flagged in this window.' : 'No coached hands in this window.'));
   for (const leak of stats.topLeaks) leaks.append(element('p', '', `${leak.flagId} · ${leak.count}× · ${number(leak.evLossBb)} bb total EV loss`));

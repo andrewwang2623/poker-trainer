@@ -51,7 +51,7 @@ export function createTracker(store, { sessionId, now = Date.now } = {}) {
       if (typeof window === 'number' && records.length >= window * 2) {
         const previous = summarize(records.slice(window, 2 * window), window, stakes);
         stats.trend = { bbPer100Delta: stats.bbPer100 - previous.bbPer100,
-          evLossPer100Delta: stats.evLossPer100 - previous.evLossPer100,
+          evLossPer100Delta: stats.coachedHands && previous.coachedHands ? stats.evLossPer100 - previous.evLossPer100 : null,
           vpipDelta: stats.vpip == null || previous.vpip == null ? null : stats.vpip - previous.vpip };
       }
       return stats;

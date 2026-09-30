@@ -73,7 +73,7 @@ test('all five windows, previous equal-sized trends, session and stakes filterin
     assert.equal(stats.hands, hands); assert.equal(stats.stakes, 'mixed');
     if (typeof window !== 'number') assert.equal(stats.trend, null);
   }
-  assert.deepEqual((await tracker.getStats(100)).trend, { bbPer100Delta: 100, evLossPer100Delta: 0, vpipDelta: 1 });
+  assert.deepEqual((await tracker.getStats(100)).trend, { bbPer100Delta: 100, evLossPer100Delta: null, vpipDelta: 1 });
   assert.equal((await tracker.getStats('session', { stakes: 'micro' })).hands, 50);
   assert.equal((await tracker.getStats(1000, { stakes: 'low' })).trend, null);
   assert.equal((await tracker.getRecentHands(1))[0].id, 'hand-2199');
