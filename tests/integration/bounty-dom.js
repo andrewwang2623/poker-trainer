@@ -15,6 +15,8 @@ export class Node {
   setAttribute(key, value) { this.attributes[key] = value; }
   addEventListener(event, callback) { this.events[event] = callback; }
   focus() { this.focused = true; }
+  select() { this.selected = true; }
+  click() { this.events.click?.(); }
   querySelectorAll(selector) {
     const matches = node => selector.split(',').some(part => {
       const value = part.trim();
@@ -32,6 +34,7 @@ export function setup(t) {
   const storage = { getItem: key => saved.get(key), setItem: (key, value) => saved.set(key, value) };
   Object.defineProperty(globalThis, 'document', { configurable: true, value: {
     createElement: tag => new Node(tag), documentElement: new Node('html'),
+    createElementNS: (_namespace, tag) => new Node(tag),
   } });
   Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: storage });
   t.after(() => previous.forEach(([key, descriptor]) => {

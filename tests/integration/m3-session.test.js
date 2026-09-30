@@ -13,6 +13,7 @@ import { mountApp } from '../../src/ui/index.js';
 import { Node, setup, text } from './bounty-dom.js';
 import { createFakeCoach } from './fake-coach.js';
 import { recordFixture } from '../tracker/fixtures.js';
+import { bountyHand } from './bounty-fixtures.js';
 
 async function finish(session) {
   await session.ready;
@@ -162,4 +163,54 @@ test('native straddled and bounty hands reach tracker unchanged and keep bounty-
   assert.equal(stats.hands, 12);
   assert.ok(Math.abs(stats.bbPer100 - 100 * records.reduce((n, r) => n + r.heroNetBb, 0) / 12) < 1e-9);
   assert.ok(Math.abs(stats.bbPer100WithBounty - stats.bbPer100 - stats.bountyPer100) < 1e-9);
+});
+
+test('turn all-in EV and a paid bounty remain separate through session recording and stats', async () => {
+  const initial = bountyHand({ stacks: [10000, 20000] });
+  const tracker = createTracker(data.createMemoryStore(), { sessionId: 'allin' });
+  const session = createEngineSession({ ...engine, createHand: () => initial }, { ...placeholder,
+    decideAction(view, profile, ctx) {
+      return view.street === 'turn' ? { type: 'bet', amount: view.legal.maxTo } : placeholder.decideAction(view, profile, ctx);
+    },
+  }, { stakes: 'micro' }, { tracker, sessionId: 'allin', seedSource: () => 42, delay: async () => {} });
+  await finish(session);
+  const record = session.getRecentHands()[0];
+  assert.ok(record.result.heroAllInEv);
+  assert.equal(record.heroEvNetBb, Math.round(record.result.heroAllInEv.evNetChips) / 100);
+  assert.equal(record.heroBountyBb, 4);
+  const stats = await tracker.getStats('all');
+  assert.equal(stats.evAdjBbPer100, 100 * record.heroEvNetBb);
+  assert.equal(stats.bbPer100, 100 * record.heroNetBb);
+  assert.equal(stats.bbPer100WithBounty, 100 * (record.heroNetBb + 4));
+});
+
+test('mounted live odds toggle computes once per decision and disappears when coach is absent', async t => {
+  const coach = createFakeCoach();
+  const session = createEngineSession(engine, placeholder, { stakes: 'micro' }, {
+    coach, seedSource: () => 1000, delay: async () => {},
+  });
+  await session.ready;
+  setup(t);
+  const root = new Node('div'); const mounted = mountApp(root, { session, coach, features: { coach: true } });
+  t.after(() => mounted.destroy());
+  assert.equal(coach.calls.odds.length, 0);
+  const toggle = root.querySelector('.live-odds').querySelector('input');
+  toggle.checked = true; toggle.events.change(); mounted.render();
+  assert.match(text(root.querySelector('.live-odds')), /equity 60%.*Pot odds 25%/);
+  assert.equal(coach.calls.odds.length, 1);
+  await finish(session);
+  assert.doesNotMatch(text(root.querySelector('.live-odds')), /equity 60%/);
+});
+
+test('app with coach and tracker absent keeps the last-ten export buffer and hides M3 controls', async t => {
+  let seed = 1000;
+  const app = await createApp({ stakes: 'micro' }, { modules: { coach: null, tracker: null },
+    seedSource: () => seed++, delay: async () => {} });
+  await finish(app.session);
+  assert.equal(app.tracker, null); assert.equal(app.features.dashboard, false);
+  assert.ok(app.session.getRecentHands().length);
+  setup(t);
+  const root = new Node('div'); const mounted = mountApp(root, app); t.after(() => mounted.destroy());
+  assert.equal(root.querySelector('.dashboard'), null); assert.equal(root.querySelector('.tracker-tools'), null);
+  assert.equal(root.querySelector('.coach-panel'), null); assert.ok(root.querySelector('.export-panel'));
 });

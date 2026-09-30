@@ -9,6 +9,8 @@ import { renderSettings } from './settings.js';
 import { applyAppearance, loadAppearance, saveAppearance } from './appearance.js';
 import { createExportPanel } from './export.js';
 import { renderReview } from './review.js';
+import { createDashboard } from './dashboard.js';
+import { createTrackerTools } from './tracker-tools.js';
 import { loadStraddle, normalizeStraddle, saveStraddle } from './straddle-settings.js';
 import { loadBounty, normalizeBounty, saveBounty } from './bounty-settings.js';
 import { loadBotPacing, loadBotSpeed, loadOutBotSpeed, normalizeBotSpeed, saveBotPacing, saveBotSpeed, saveOutBotSpeed } from './bot-speed.js';
@@ -29,6 +31,12 @@ export function mountApp(rootEl, app = {}) {
   session.setOutBotSpeed?.(settings.outBotSpeed);
   const boardReveal = createBoardReveal();
   const exportPanel = app.features?.export && app.exporter ? createExportPanel(app, session) : null;
+  const dashboard = app.features?.dashboard && app.tracker ? createDashboard(app, session) : null;
+  let page = 'table';
+  const trackerTools = app.features?.tracker && app.tracker ? createTrackerTools(app, session, {
+    getStakes: () => dashboard ? dashboard.getStakes() : session.getState().stakes,
+    onRestore: () => dashboard?.refresh(true),
+  }) : null;
   let timerSettings = loadTimer();
   let timerNode = null;
   let destroyed = false;
@@ -72,11 +80,17 @@ export function mountApp(rootEl, app = {}) {
       ? `${stakes.label} · $${stakes.sb.toFixed(2)}/$${stakes.bb.toFixed(2)}` : state.stakes));
     const dashboardLink = element('a', 'dashboard-link', 'Dashboard ↗');
     dashboardLink.href = '#dashboard';
-    dashboardLink.hidden = !app.features?.dashboard;
+    dashboardLink.hidden = !dashboard;
+    dashboardLink.setAttribute('aria-current', page === 'dashboard' ? 'page' : 'false');
+    dashboardLink.addEventListener('click', event => { event.preventDefault(); page = 'dashboard'; timer.stop(); render(); });
+    const tableLink = element('a', 'table-link', 'Table'); tableLink.href = '#table'; tableLink.hidden = !dashboard;
+    tableLink.setAttribute('aria-current', page === 'table' ? 'page' : 'false');
+    tableLink.addEventListener('click', event => { event.preventDefault(); page = 'table'; render(); });
+    meta.append(tableLink);
     meta.append(dashboardLink);
     masthead.append(title, meta);
     const intro = element('div', 'intro-row');
-    intro.append(element('div', '', 'Practice table'), element('span', '', `${state.numPlayers} players · No-Limit Hold’em${state.handId.startsWith('mock-') ? ' · Sample hand' : ''}`));
+    intro.append(element('div', '', page === 'dashboard' ? 'Progress & study' : 'Practice table'), element('span', '', `${state.numPlayers} players · No-Limit Hold’em${state.handId.startsWith('mock-') ? ' · Sample hand' : ''}`));
     const layout = element('main', 'game-layout');
     const left = element('div', 'game-column');
     left.append(renderTable(state, boardReveal(state), revealHands, rabbitHunt));
@@ -192,17 +206,19 @@ export function mountApp(rootEl, app = {}) {
       exportPanel.refresh();
       right.append(exportPanel.node);
     }
-    const dashboardPanel = element('section', 'panel dashboard-panel');
-    dashboardPanel.id = 'dashboard';
-    dashboardPanel.hidden = !app.features?.dashboard;
-    dashboardPanel.append(element('h2', '', 'Dashboard'), element('p', '', 'Your long-term stats will appear here.'));
-    right.append(dashboardPanel);
     layout.append(left, right);
+    layout.hidden = page === 'dashboard';
     shell.append(masthead, intro, layout);
+    if (dashboard) {
+      dashboard.node.hidden = page !== 'dashboard';
+      if (page === 'dashboard') dashboard.refresh();
+      shell.append(dashboard.node);
+    }
+    if (trackerTools) shell.append(trackerTools.node);
     rootEl.replaceChildren(shell);
     const list = rootEl.querySelector('.event-list');
     if (list) list.scrollTop = list.scrollHeight;
-    const timedTurn = timerSettings.enabled && !busy && legal &&
+    const timedTurn = page === 'table' && timerSettings.enabled && !busy && legal &&
       state.actingSeat === state.heroSeat && !state.result;
     timer.sync(timedTurn ? `${state.handId}:${state.street}:${state.events.length}` : null, timerSettings.seconds);
   }
@@ -241,5 +257,5 @@ export function mountApp(rootEl, app = {}) {
 
   const unsubscribe = session.subscribe?.(render);
   render();
-  return { render, destroy: () => { destroyed = true; timer.stop(); unsubscribe?.(); rootEl.replaceChildren(); } };
+  return { render, destroy: () => { destroyed = true; dashboard?.destroy(); timer.stop(); unsubscribe?.(); rootEl.replaceChildren(); } };
 }

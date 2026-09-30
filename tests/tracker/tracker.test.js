@@ -97,3 +97,16 @@ test('JSON merge dedupes existing and incoming IDs; replace, validation, and ser
   }
   assert.equal((await tracker.getStats('all')).hands, 1);
 });
+
+test('malformed coaching data and stats reject before replace changes storage', async () => {
+  const tracker = make();
+  await tracker.recordHand(recordFixture(0));
+  const badCoach = recordFixture(1);
+  badCoach.coach = resultFixture(badCoach.id, { flags: [null] });
+  const badFlags = recordFixture(2, { statFlags: { ...recordFixture().statFlags, postflopCalls: -1 } });
+  for (const record of [badCoach, badFlags]) {
+    await assert.rejects(tracker.recordHand(record), TypeError);
+    await assert.rejects(tracker.importJSON(JSON.stringify({ schemaVersion: 1, hands: [record] }), { mode: 'replace' }), TypeError);
+    assert.equal((await tracker.getStats('all')).hands, 1);
+  }
+});

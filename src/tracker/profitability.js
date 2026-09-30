@@ -13,7 +13,7 @@ export function estimateProfitability(stats, { ranges, referenceWinrate, opportu
     return distance ? [{ key, penalty: Math.min(3, 2 * distance / (hi - lo)) }] : [];
   }).sort((a, b) => b.penalty - a.penalty || a.key.localeCompare(b.key));
   const penalty = Math.min(10, deviations.reduce((sum, item) => sum + item.penalty, 0));
-  const model = referenceWinrate - stats.evLossPer100 - penalty - stats.rakePer100;
+  const model = referenceWinrate - (stats.coachedHands ? stats.evLossPer100 : 0) - penalty - stats.rakePer100;
   const weight = stats.hands / (stats.hands + 3000);
   const estimate = weight * stats.evAdjBbPer100 + (1 - weight) * model;
   const verdict = estimate <= -2.5 ? 'likely_losing' : estimate >= 2.5 ? 'likely_winning' : 'break_even';

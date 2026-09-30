@@ -16,7 +16,6 @@ export function createEngineSession(engine, bots, initialSettings = {}, options 
   const reads = bots.createHeroReads?.() ?? null;
   const completionErrors = new Map();
   let heroStats = null;
-  let finishing = Promise.resolve();
   let settings = initialSettings;
   let botSpeed = normalizeBotSpeed(initialSettings.botSpeed);
   let botPacing = initialSettings.botPacing !== false;
@@ -76,12 +75,12 @@ export function createEngineSession(engine, bots, initialSettings = {}, options 
       try {
         record.coach = options.coach.analyzeHand(record, {
           rng: engine.createRng(engine.deriveSeed(record.seed, 'coach')),
-        });
+        }) ?? null;
       } catch (error) { completionErrors.set(record.id, `Coach unavailable: ${error.message}`); }
     }
     recentHands.unshift(record);
     if (recentHands.length > 10) recentHands.pop();
-    finishing = (async () => {
+    const finishing = (async () => {
       try { await options.tracker?.recordHand(record); }
       catch (error) {
         completionErrors.set(record.id, [completionErrors.get(record.id), `Hand could not be saved: ${error.message}`].filter(Boolean).join(' · '));
@@ -150,6 +149,7 @@ export function createEngineSession(engine, bots, initialSettings = {}, options 
   return {
     ready,
     getState: () => state,
+    getSessionId: () => sessionId,
     getLegalActions: () => state.actingSeat === state.heroSeat ? engine.getLegalActions(state) : null,
     getRecentHands: () => recentHands.slice(),
     getCompletionError: id => completionErrors.get(id) ?? '',

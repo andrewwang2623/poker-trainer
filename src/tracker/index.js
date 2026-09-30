@@ -1,4 +1,4 @@
-import { SCHEMA_VERSION, STATS_WINDOWS, STAKES } from '../shared/schemas.js';
+import { SCHEMA_VERSION, STATS_WINDOWS, STAKES, FLAG_IDS, FLAG_SEVERITIES } from '../shared/schemas.js';
 import { summarize } from './stats.js';
 
 function validateRecord(record) {
@@ -8,9 +8,21 @@ function validateRecord(record) {
       !Number.isFinite(record.heroRakeBb) || !record.statFlags || !record.result ||
       !Array.isArray(record.players) || !Array.isArray(record.events) || !Array.isArray(record.decisions) ||
       (record.heroBountyBb != null && !Number.isFinite(record.heroBountyBb)) ||
-      (record.coach != null && (record.coach.handId !== record.id || !Number.isFinite(record.coach.totalEvLossBb) ||
-        !Array.isArray(record.coach.flags) || !Array.isArray(record.coach.decisions)))) {
+      (record.coach != null && (record.coach.handId !== record.id || !Number.isFinite(record.coach.totalEvLossBb) || record.coach.totalEvLossBb < 0 ||
+        !Array.isArray(record.coach.flags) || !Array.isArray(record.coach.decisions) ||
+        record.coach.flags.some(flag => !flag || !FLAG_IDS.includes(flag.id) || !FLAG_SEVERITIES.includes(flag.severity) ||
+          !flag.data || (flag.evLossBb != null && (!Number.isFinite(flag.evLossBb) || flag.evLossBb < 0)))))) {
     throw new TypeError('Invalid or unsupported HandRecord in backup.');
+  }
+  for (const key of ['vpip', 'pfr', 'threeBetOpp', 'threeBet', 'cbetOpp', 'cbet', 'foldToCbetOpp', 'foldToCbet',
+    'sawFlop', 'wentToShowdown', 'wonAtShowdown']) {
+    if (typeof record.statFlags[key] !== 'boolean') throw new TypeError('Invalid stat flags in backup.');
+  }
+  for (const key of ['postflopBets', 'postflopRaises', 'postflopCalls']) {
+    if (!Number.isInteger(record.statFlags[key]) || record.statFlags[key] < 0) throw new TypeError('Invalid postflop counts in backup.');
+  }
+  for (const key of ['facedPostflopBet', 'foldedToPostflopBet', 'straddled', 'facedStraddle']) {
+    if (record.statFlags[key] != null && typeof record.statFlags[key] !== 'boolean') throw new TypeError('Invalid stat flags in backup.');
   }
 }
 
@@ -27,7 +39,7 @@ export function createTracker(store, { sessionId, now = Date.now } = {}) {
     return (await store.getAll()).sort((a, b) => b.timestamp - a.timestamp || b.id.localeCompare(a.id));
   };
   return {
-    recordHand(record) { validateRecord(record); return mutate(() => store.put(record)); },
+    recordHand(record) { return mutate(() => { validateRecord(record); return store.put(record); }); },
     async getStats(window, { stakes } = {}) {
       if (!STATS_WINDOWS.includes(window)) throw new RangeError('Unknown stats window');
       if (stakes != null && !STAKES[stakes]) throw new RangeError('Unknown stakes');

@@ -22,7 +22,7 @@ export function renderReview(record, explain, error = '') {
     panel.append(item);
   }
   for (const decision of result.decisions) {
-    panel.append(element('p', 'coach-decision', `Decision #${decision.decisionIndex + 1} · Equity ${Math.round(decision.equity * 100)}% · Pot odds ${decision.potOdds == null ? '—' : `${Math.round(decision.potOdds * 100)}%`} · Best ${decision.bestAction} · EV loss ${decision.evLossBb.toFixed(1)} bb`));
+    panel.append(element('p', 'coach-decision', `Decision #${decision.decisionIndex + 1} · Equity ${decision.equity == null ? '—' : `${Math.round(decision.equity * 100)}%`} · Pot odds ${decision.potOdds == null ? '—' : `${Math.round(decision.potOdds * 100)}%`} · Best ${decision.bestAction} · EV loss ${decision.evLossBb.toFixed(1)} bb`));
   }
   return panel;
 }
