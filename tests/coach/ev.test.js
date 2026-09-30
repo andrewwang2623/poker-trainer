@@ -100,9 +100,10 @@ test('EV caps what an all-in can win at what opponents can match', () => {
     opponents: [{ seat: 1, allIn: false, stack: 2000, committedStreet: 0, stats: { foldToBet: 0.4 } }],
   });
   const [shove] = evaluateCandidates(spot, [{ key: 'allIn', type: 'bet', to: 10000 }]);
-  const F = 0.4 * (0.6 + 0.53 * 2); // folds stop growing past a 2× pot overbet
+  // Effectively a 20bb (2× pot) bet: its fold estimate and calling-range equity, not a 10× pot one's.
+  const F = 0.4 * (0.6 + 0.53 * 2);
   close(shove.fold, F);
-  const Ec = 0.5 / Math.sqrt(10); // a 10× pot bet is called by a tighter range
+  const Ec = 0.5 / Math.sqrt(2);
   close(shove.ev, Math.round((F * 10 + (1 - F) * (0.85 * Ec * (10 + 40) * 1 - 20)) * 100) / 100);
 
   // Hero calls a 100bb shove with 20bb: the 80bb excess comes back.
@@ -142,4 +143,19 @@ test('uncalled excess: every other seat\'s chips above hero\'s level after calli
   };
   assert.equal(uncalledExcess(spot), 50 + 850);
   assert.equal(uncalledExcess({ ...spot, legal: { toCall: 1000 } }), 0, 'a full call matches everything');
+});
+
+test('overbet guards see the amount opponents can match, not the announced shove', () => {
+  // River, 10bb pot, the only opponent has 10bb behind: a 100bb shove is a pot-sized bet.
+  const spot = flopSpot({
+    street: 'river', equity: 0.6,
+    opponents: [{ seat: 1, allIn: false, stack: 1000, committedStreet: 0, stats: { foldToBet: 0.4 } }],
+  });
+  const [shove, pot] = evaluateCandidates(spot, [
+    { key: 'allIn', type: 'bet', to: 10000 }, { key: 'bet:1', type: 'bet', to: 1000 },
+  ]);
+  close(shove.fold, pot.fold);
+  close(shove.ev, pot.ev);
+  const F = 0.4 * (0.6 + 0.53);
+  close(shove.ev, Math.round((F * 10 + (1 - F) * (0.85 * 0.6 * 30 - 10)) * 100) / 100);
 });

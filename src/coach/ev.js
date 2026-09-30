@@ -3,9 +3,9 @@
 //   EV(check) = E·P·R
 //   EV(call) = E·(P+C)·R − C
 //   EV(bet/raise adding A) = F·P + (1−F)·(E'·(P+2A)·R − A)
-// Two effective-stack corrections the spec's formulas leave implicit: a call or raise only wins
-// what opponents can match (chips beyond hero's all-in come back uncalled), so P and A are capped
-// at the matchable amount.
+// Two effective-stack corrections the spec's formulas leave implicit: a call only wins what hero
+// can match, and a bet or raise only puts in what opponents can match (the rest comes back
+// uncalled), so P and A are capped at the matchable amount, for the guards below too.
 // Two overbet guards (REQUESTS-claude.md): taken literally, F keeps growing with A/P while E' stays
 // 0.85·E, so a 20×-pot shove scores best with the nuts and as a bluff alike. Folds stop growing past
 // FOLD_SIZE_CAP × pot, and a bet or raise of f > 1 pot is called by a tighter range:
@@ -167,11 +167,12 @@ export function evaluateCandidates(spot, candidates) {
       addBb = C;
     } else if (c.type === 'bet' || c.type === 'raise') {
       const A = (c.to - spot.heroCommitted) / 100;
-      const matchable = (Math.min(c.to, reach) - spot.heroCommitted) / 100;
+      // What opponents can match: chips over that come back, so they neither win nor fold anyone.
+      const M = Math.max((Math.min(c.to, reach) - spot.heroCommitted) / 100, C);
       const R = c.to >= spot.legal.maxTo ? REALIZATION.final : streetR;
-      const Ec = overbetEquity(E, (A - C) / (P + C));
-      fold = foldEstimate(opps, A, P);
-      ev = evBet(Ec, P, Math.max(matchable, C), R, fold);
+      const Ec = overbetEquity(E, (M - C) / (P + C));
+      fold = foldEstimate(opps, M, P);
+      ev = evBet(Ec, P, M, R, fold);
       ev += foldPaid * fold + bounty * (1 - fold) * CALLED_EQUITY * Ec;
       addBb = A;
     }
