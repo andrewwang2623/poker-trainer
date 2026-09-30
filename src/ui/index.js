@@ -8,6 +8,7 @@ import { renderLog } from './log.js';
 import { renderSettings } from './settings.js';
 import { applyAppearance, loadAppearance, saveAppearance } from './appearance.js';
 import { createExportPanel } from './export.js';
+import { renderReview } from './review.js';
 import { loadStraddle, normalizeStraddle, saveStraddle } from './straddle-settings.js';
 import { loadBounty, normalizeBounty, saveBounty } from './bounty-settings.js';
 import { loadBotPacing, loadBotSpeed, loadOutBotSpeed, normalizeBotSpeed, saveBotPacing, saveBotSpeed, saveOutBotSpeed } from './bot-speed.js';
@@ -49,6 +50,9 @@ export function mountApp(rootEl, app = {}) {
   let error = '';
   let revealedHandId = null;
   let rabbitHandId = null;
+  let liveOddsEnabled = false;
+  let oddsKey = null;
+  let liveOdds = null;
 
   function render() {
     if (destroyed) return;
@@ -118,6 +122,26 @@ export function mountApp(rootEl, app = {}) {
     timerNode.setAttribute('aria-label', 'Time remaining for your action');
     controls.querySelector('.panel-heading').append(timerNode);
     left.append(controls);
+    if (app.features?.coach && app.coach?.liveOdds && session.getLiveOdds) {
+      const oddsPanel = element('section', 'panel live-odds');
+      const label = element('label', 'export-toggle');
+      const toggle = element('input');
+      toggle.type = 'checkbox'; toggle.checked = liveOddsEnabled;
+      toggle.addEventListener('change', () => { liveOddsEnabled = toggle.checked; render(); });
+      label.append(toggle, element('span', '', 'Show live odds (training aid)'));
+      oddsPanel.append(label);
+      if (liveOddsEnabled && legal) {
+        const key = `${state.handId}:${state.events.length}`;
+        if (key !== oddsKey) {
+          oddsKey = key;
+          try { liveOdds = session.getLiveOdds(); } catch { liveOdds = null; }
+        }
+        oddsPanel.append(element('p', '', liveOdds
+          ? `Estimated equity ${Math.round(liveOdds.equity * 100)}% · Pot odds ${liveOdds.potOdds == null ? '—' : `${Math.round(liveOdds.potOdds * 100)}%`}`
+          : 'Live odds unavailable.'));
+      }
+      left.append(oddsPanel);
+    }
     if (error) left.append(element('p', 'error-message', error));
     const right = element('aside', 'sidebar');
     right.append(renderLog(state), renderSettings(settings, next => {
@@ -158,11 +182,12 @@ export function mountApp(rootEl, app = {}) {
       saveTimer(next);
       render();
     }));
-    const coachPanel = element('section', 'panel coach-panel');
-    coachPanel.id = 'coach-feedback';
-    coachPanel.hidden = !app.features?.coach || !state.result;
-    coachPanel.append(element('h2', '', 'Coach feedback'), element('p', '', 'Feedback appears after the coach is connected.'));
-    right.append(coachPanel);
+    const record = session.getRecentHands?.().find(record => record.id === state.handId);
+    if (app.features?.coach && state.result && record) {
+      right.append(renderReview(record, app.explain?.explainFlag, session.getCompletionError?.(state.handId)));
+    } else if (session.getCompletionError?.(state.handId)) {
+      right.append(element('p', 'error-message', session.getCompletionError(state.handId)));
+    }
     if (exportPanel) {
       exportPanel.refresh();
       right.append(exportPanel.node);
