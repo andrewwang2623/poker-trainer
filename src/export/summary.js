@@ -6,7 +6,7 @@ const windowName = window => typeof window === 'number' ? `Last${window}` : wind
 
 /** StatsSummary has no dates: omit the date range rather than infer it. */
 export function formatSummary({ stats, patterns = [], stakes }, { includePrompt = true } = {}) {
-  const config = STAKES[stakes];
+  const config = Object.hasOwn(STAKES, stakes) ? STAKES[stakes] : undefined;
   // Windows overlap: use All when available, otherwise the largest supplied sample.
   const primary = stats.find(stat => stat.window === 'all') ?? [...stats].sort((a, b) => b.hands - a.hands)[0];
   const lines = ['=== POKER TRAINER SUMMARY v1 ==='];

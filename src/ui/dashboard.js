@@ -78,7 +78,8 @@ export function renderTrendChart(records) {
 
 export function renderDashboard({ stats, records, patterns, patternError }, explain) {
   const content = element('div', 'dashboard-content');
-  content.append(element('p', 'dashboard-sample', `${windowName(stats.window)} · ${stats.hands.toLocaleString('en-US')} hands · ${STAKES[stats.stakes]?.label ?? 'Mixed stakes'}`));
+  const stakes = Object.hasOwn(STAKES, stats.stakes) ? STAKES[stats.stakes] : undefined;
+  content.append(element('p', 'dashboard-sample', `${windowName(stats.window)} · ${stats.hands.toLocaleString('en-US')} hands · ${stakes?.label ?? 'Mixed stakes'}`));
   const cards = element('div', 'stat-grid');
   const items = [
     ['bb/100 · excluding bounties', signed(stats.bbPer100)], ['bb/100 · with bounties', signed(stats.bbPer100WithBounty)],
