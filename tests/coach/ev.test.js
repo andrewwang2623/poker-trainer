@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   evCheck, evCall, evBet, foldEstimate, candidateActions, evaluateCandidates, severityOf, sizeKey,
-  REALIZATION, CALLED_EQUITY, overbetEquity,
+  REALIZATION, CALLED_EQUITY, overbetEquity, uncalledExcess,
 } from '../../src/coach/ev.js';
 
 const close = (a, b, eps = 1e-9) => assert.ok(Math.abs(a - b) < eps, `${a} vs ${b}`);
@@ -127,4 +127,19 @@ test('bounty EV: P(win) × payout on continuing actions; fold wins count only fo
   const F = p['bet:0.5'].fold;
   close(f['bet:0.5'].ev - p['bet:0.5'].ev, 10 * (F + (1 - F) * 0.85 * 0.5), 0.011);
   close(s['bet:0.5'].ev - p['bet:0.5'].ev, 10 * (1 - F) * 0.85 * 0.5, 0.011);
+});
+
+test('uncalled excess: every other seat\'s chips above hero\'s level after calling, folded seats too', () => {
+  // Hero (seat 2) calls all-in for 1.5bb: the folded seat's 2bb post is 0.5bb over that and the
+  // raiser's 10bb is 8.5bb over; neither excess can be won.
+  const spot = {
+    heroSeat: 2, heroCommitted: 0, legal: { toCall: 150 },
+    seats: [
+      { seat: 0, folded: true, committedStreet: 200 },
+      { seat: 1, folded: false, committedStreet: 1000 },
+      { seat: 2, folded: false, committedStreet: 0 },
+    ],
+  };
+  assert.equal(uncalledExcess(spot), 50 + 850);
+  assert.equal(uncalledExcess({ ...spot, legal: { toCall: 1000 } }), 0, 'a full call matches everything');
 });

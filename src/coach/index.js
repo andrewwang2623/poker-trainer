@@ -5,7 +5,7 @@
 import { computeEquity, boardTexture, holdsBounty, createRng, deriveSeed } from '../engine/index.js';
 import { decisionContexts } from './context.js';
 import { opponentRanges, statsOf } from './villainRanges.js';
-import { candidateActions, evaluateCandidates, GRADE_MAJOR_LOSS } from './ev.js';
+import { candidateActions, evaluateCandidates, uncalledExcess, GRADE_MAJOR_LOSS } from './ev.js';
 import { chartCheck, openSizeCheck } from './preflop.js';
 import { decisionFlags, TEXTURE_PCT } from './flags.js';
 
@@ -59,7 +59,9 @@ function analyzeDecision(record, ctx, rng, iterations) {
     hero: d.holeCards, board: ctx.board, villains: ranges.map((r) => r.range), iterations, rng,
   });
   const equity = eq.equity;
-  const potOdds = ctx.legal.toCall > 0 ? ctx.legal.toCall / (ctx.pot + ctx.legal.toCall) : null;
+  // The price of the call hero can make, against the pot it can win (§8.3 requiredEquity = C/(P+C)).
+  const matchedPot = ctx.pot - uncalledExcess(ctx);
+  const potOdds = ctx.legal.toCall > 0 ? ctx.legal.toCall / (matchedPot + ctx.legal.toCall) : null;
   const bounties = heldBounties(record, ctx);
   const spot = { ...ctx, opponents, equity, inPosition: d.inPosition, bounties };
 
@@ -107,7 +109,7 @@ function analyzeDecision(record, ctx, rng, iterations) {
     texture,
   };
   return {
-    ctx, heroSeat: hero, equity, potOdds, evs, chosen, best, evLossBb: r2(evLossBb),
+    ctx, heroSeat: hero, equity, potOdds, matchedPot, evs, chosen, best, evLossBb: r2(evLossBb),
     source: useChart ? 'chart' : 'ev', chartResult, openSize: d.street === 'preflop' ? openSizeCheck(record, ctx) : null,
     texture, sizing, oppTier: mainOpp?.profile?.tier ?? null, oppVpip,
     raiser: opponents.find((o) => o.seat === ctx.streetAggressor) ?? null, coachDecision,
@@ -135,7 +137,10 @@ export function liveOdds(view, opponents = [], { rng, iterations = LIVE_ODDS_ITE
   const live = (view?.players ?? []).filter((p) => p.seat !== view.seat && !p.folded);
   const toCall = view?.legal ? view.legal.toCall
     : me ? Math.max(0, Math.min(view.currentBet - me.committedStreet, me.stack)) : 0;
-  const potOdds = toCall > 0 ? r4(toCall / (view.pot + toCall)) : null;
+  const matchedPot = me ? view.pot - uncalledExcess({
+    legal: { toCall }, heroCommitted: me.committedStreet, heroSeat: view.seat, seats: view.players,
+  }) : view?.pot;
+  const potOdds = toCall > 0 ? r4(toCall / (matchedPot + toCall)) : null;
   const done = view?.street === 'showdown' || view?.street === 'complete';
   if (!me || me.folded || done || view.holeCards?.length !== 2 || live.length === 0) {
     return { equity: null, potOdds: done ? null : potOdds };

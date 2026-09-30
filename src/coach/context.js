@@ -17,6 +17,7 @@ import { CHIPS_PER_BB, STRADDLE_BB } from '../shared/schemas.js';
 /**
  * @typedef {Object} DecisionContext
  * @property {import('../shared/schemas.js').HeroDecision} decision
+ * @property {number} heroSeat
  * @property {Object} event                   hero's action event
  * @property {Object[]} events                every event before it
  * @property {string} street
@@ -128,6 +129,7 @@ export function decisionContexts(record) {
           }));
           out.push({
             decision,
+            heroSeat: hero,
             event: e,
             events: record.events.slice(0, i),
             street,

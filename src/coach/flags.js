@@ -20,7 +20,7 @@ const r2 = (x) => Math.round(x * 100) / 100;
 const r3 = (x) => Math.round(x * 1000) / 1000;
 
 /**
- * @param {Object} a  analyzed decision: {ctx, equity, potOdds, evs, chosen, best, evLossBb, source,
+ * @param {Object} a  analyzed decision: {ctx, equity, potOdds, matchedPot, evs, chosen, best, evLossBb, source,
  *   chartResult, openSize, texture, sizing, oppTier, mainOpp, heroSeat}
  * @returns {import('../shared/schemas.js').CoachFlag[]}
  */
@@ -35,16 +35,18 @@ export function decisionFlags(a) {
   });
   const potBb = r2(ctx.pot / 100);
   const toCallBb = r2(ctx.legal.toCall / 100);
+  // The pot hero's call can win, so requiredEquity = toCallBb / (matchedPotBb + toCallBb).
+  const matchedPotBb = r2((a.matchedPot ?? ctx.pot) / 100);
 
   for (const f of a.chartResult?.flags ?? []) flag(f.id, f.data);
   if (a.openSize) flag('PF_OPEN_SIZE', a.openSize, 0);
   if (a.source !== 'ev') return flags;
 
   if (type === 'call' && potOdds !== null && equity < potOdds && evLossBb >= EQ_FLAG_LOSS) {
-    flag('EQ_BAD_CALL', { equity: r3(equity), requiredEquity: r3(potOdds), toCallBb, potBb });
+    flag('EQ_BAD_CALL', { equity: r3(equity), requiredEquity: r3(potOdds), toCallBb, potBb: matchedPotBb });
   }
   if (type === 'fold' && potOdds !== null && equity > potOdds + BAD_FOLD_MARGIN && evLossBb >= EQ_FLAG_LOSS) {
-    flag('EQ_BAD_FOLD', { equity: r3(equity), requiredEquity: r3(potOdds), toCallBb, potBb });
+    flag('EQ_BAD_FOLD', { equity: r3(equity), requiredEquity: r3(potOdds), toCallBb, potBb: matchedPotBb });
   }
 
   const bestAggressive = best.type === 'bet' || best.type === 'raise';

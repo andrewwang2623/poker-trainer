@@ -350,3 +350,18 @@ test('river bettor range: dropped combos stay dropped when computing equity', ()
   const { equity } = analyze(record).decisions[4];
   assert.ok(Math.abs(equity - 2 / 7) <= 0.03, `equity ${equity}, expected ~${(2 / 7).toFixed(3)}`);
 });
+
+test('pot odds use the effective call and the matched pot, not an opponent\'s unmatchable excess', () => {
+  // HU: SB 100bb shoves, hero (BB, 20bb) calls 19bb. Only 20bb of the shove can be won: 40bb pot.
+  const hand = () => HU({ hero: 1, stacksBb: [100, 20], profiles: { 0: PROFILES.lowReg },
+    holes: { 1: ['7c', '2d'] }, board: ['Kd', '9h', '4s', 'Jc', '3h'] });
+  const r = analyze(recordOf(hand(), [[0, 'raise', 100], [1, 'call']]));
+  assert.equal(r.decisions[0].potOdds, 0.475);
+  const [bad] = r.flags.filter((f) => f.id === 'EQ_BAD_CALL');
+  assert.ok(bad, `EQ_BAD_CALL expected, got ${r.flags.map((f) => f.id)}`);
+  assert.deepEqual({ ...bad.data, equity: undefined },
+    { equity: undefined, requiredEquity: 0.475, toCallBb: 19, potBb: 21 });
+
+  const odds = liveOdds(getView(play(hand(), [[0, 'raise', 100]]), 1), [], { rng: createRng(3) });
+  assert.equal(odds.potOdds, 0.475);
+});

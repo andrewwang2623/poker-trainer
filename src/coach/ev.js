@@ -82,6 +82,18 @@ export const overbetEquity = (E, frac) => (frac > 1 ? E / frac ** OVERBET_EXP : 
 
 const round2 = (x) => Math.round(x * 100) / 100;
 
+/**
+ * Chips other seats (folded ones too) have in on this street above hero's level after calling:
+ * hero can't win them, as they are returned uncalled or go to a side pot. 0 unless the call puts
+ * hero all-in.
+ * @param {{legal: Object, heroCommitted: number, heroSeat?: number, seats?: Object[], opponents: Object[]}} spot
+ */
+export function uncalledExcess(spot) {
+  const after = spot.heroCommitted + spot.legal.toCall;
+  const others = spot.seats ? spot.seats.filter((s) => s.seat !== spot.heroSeat) : spot.opponents;
+  return others.reduce((sum, o) => sum + Math.max(0, o.committedStreet - after), 0);
+}
+
 /** Key for a bet/raise of `to` chips (see candidateActions). */
 export function sizeKey(type, to, spot) {
   if (to >= spot.legal.maxTo) return 'allIn';
@@ -149,12 +161,9 @@ export function evaluateCandidates(spot, candidates) {
     if (c.type === 'check') {
       ev = evCheck(E, P, streetR) + bounty * E;
     } else if (c.type === 'call') {
-      const after = spot.heroCommitted + spot.legal.toCall;
       const heroAllIn = spot.legal.toCall >= spot.legal.maxTo - spot.heroCommitted;
-      // Opponent chips above hero's all-in level are returned uncalled.
-      const excess = spot.opponents.reduce((s, o) => s + Math.max(0, o.committedStreet - after), 0) / 100;
       const noMoreBetting = heroAllIn || opps.every((o) => o.allIn);
-      ev = evCall(E, P - excess, C, noMoreBetting ? REALIZATION.final : streetR) + bounty * E;
+      ev = evCall(E, P - uncalledExcess(spot) / 100, C, noMoreBetting ? REALIZATION.final : streetR) + bounty * E;
       addBb = C;
     } else if (c.type === 'bet' || c.type === 'raise') {
       const A = (c.to - spot.heroCommitted) / 100;
