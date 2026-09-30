@@ -188,3 +188,47 @@ over limpers): lowReg 40%, midReg 48%, toughReg 50% out of position, +4pp in pos
 by the price vs a standard 3×/4× 3-bet and trimmed per caller. It 4-bets the top 10% / 11% / 12% of that
 range. Result (full bot-only games): fold to 3-bet lowReg ~56%, midReg ~52%, toughReg ~45%. Cold spots
 (facing an open and a 3-bet without having opened) and 4-bets+ are unchanged.
+
+## 2026-09-29 — Coach (SPEC §6, §8, §14, §15; implemented in `src/coach/`)
+
+`analyzeHand`, `detectPatterns` and `liveOdds` follow §6. Tests are in `tests/coach/`.
+
+**For the SPEC owner (please update §8.2 if you agree):**
+1. **Overbet guards (deviation).** Taken literally, `F` keeps growing with `A/P` (only clamped at 0.9) while
+   `E' = 0.85·E` stays fixed. Since the all-in is always a candidate, a 20×-pot shove then scores best in
+   almost every spot: with the nuts (checking the river nuts "lost" 7.5bb to a shove) and as a pure bluff into
+   a range that just bet. Two constants in `ev.js` fix this: `FOLD_SIZE_CAP = 2` (fold equity stops growing
+   past a 2× pot overbet) and `OVERBET_EXP = 0.5` (a bet of f > 1 pot is called by a tighter range,
+   `E' = 0.85·E / √f`). Bets up to pot, including every ½/¾/pot preset, use §8.2 unchanged.
+2. **Effective stacks.** A call or shove only wins what opponents can match: chips beyond hero's all-in come
+   off `P`, and `A` is capped at what the deepest opponent can call.
+3. **Raises use `P + 2A` as written.** For a raise that overstates the final pot by `C`, since the opponent
+   adds `A − C`. I kept the spec formula. `P + 2A − C` would be exact if you want it.
+4. **Choices §8 leaves open:**
+   - Opponents who haven't acted yet preflop get their top-`vpip` range.
+   - A 4-bet+ range is the top 40% of the 3-bet range.
+   - Preflop spots with no chart row (limped pots, facing a 3-bet or more) use the EV model.
+   - EQ_* flags aren't raised where the chart sets the loss.
+   - `bestAction` in chart spots is the chart's cheapest action.
+   - PF_OPEN_SIZE carries `evLossBb: 0` (info).
+   - SZ_* loss is EV(the texture range's midpoint size) − EV(chosen).
+   - LN_MISSED_CBET replaces EQ_MISSED_VALUE on the same decision.
+   - A river bet counts as "polar" at equity ≥ 0.75 or < 0.35.
+   - AF opportunities for PAT_PASSIVE are hands that saw a flop.
+   - PAT_TILT reports the latest qualifying loss.
+   - PAT_REPEATED_LEAK is major at 10+.
+   - `detectPatterns` doesn't filter by stakes: the caller passes the hands, and `stakes` picks the ranges.
+5. **Grade question.** "`minor` if any flag" includes info flags, so an off-size open alone (PF_OPEN_SIZE,
+   info) grades a hand `minor`. Should `minor` require a minor or major flag?
+
+**For Astra:**
+1. `src/coach/index.js` now loads, so `features.coach` turns on. `session.js` already passes
+   `rng: createRng(deriveSeed(seed, 'coach'))`, which is also the coach's default. It's synchronous, ~2–5 ms
+   per hand.
+2. `liveOdds(view, opponents, {rng, iterations})` reads profiles from `view.players`. `opponents` only fills
+   in live opponents without one, in seat order. It returns nulls once the hand is over or hero folded.
+3. In straddled pots, PF_* `position` / `vsPosition` and `CoachDecision.chart.position` are the **chart row**
+   (the straddler is `BB`, the real BB is `SB`, §14), not the seat label. `HeroDecision.position` keeps the
+   seat label if the explanation should show both.
+4. `evByActionBb` keys are `fold`, `check`, `call`, `bet:0.5`, `raise:0.75` (share of the pot after calling),
+   `allIn`, plus the chosen size (e.g. `bet:0.33`). Explain's `action()` already handles these.
