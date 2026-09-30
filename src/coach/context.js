@@ -181,8 +181,3 @@ export function decisionContexts(record) {
   }
   return out;
 }
-
-/** Postflop acting order index: 0 = first to act (left of the button). */
-export function postflopIndex(record, seat) {
-  return (seat - record.buttonSeat - 1 + 2 * record.numPlayers) % record.numPlayers;
-}
