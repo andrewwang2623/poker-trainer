@@ -232,3 +232,22 @@ range. Result (full bot-only games): fold to 3-bet lowReg ~56%, midReg ~52%, tou
    seat label if the explanation should show both.
 4. `evByActionBb` keys are `fold`, `check`, `call`, `bet:0.5`, `raise:0.75` (share of the pot after calling),
    `allIn`, plus the chosen size (e.g. `bet:0.33`). Explain's `action()` already handles these.
+
+## 2026-09-30 — coach review fixes (spec notes)
+
+**For the spec owner:**
+1. **Range keys (§6 `computeEquity`, `HandRange`).** A villain range may now also key exact combos
+   (`{"AsKd": 0.8}`) next to hand classes. The coach needs this: narrowing a range after a bet (§8.1) keeps
+   weights per combo, since collapsing back to class weights re-added dropped combos. Please allow exact
+   combo keys in the HandRange description or in `computeEquity`'s. Class-only ranges behave as before.
+2. **Matched pot (§8.2, §8.3).** `potOdds`/`requiredEquity` = C / (P' + C), where P' is the pot minus chips
+   hero can't win: other seats' chips on this street above hero's level after an all-in call. EQ_BAD_CALL and
+   EQ_BAD_FOLD `potBb` report P', so requiredEquity = toCallBb / (potBb + toCallBb) still holds. Without an
+   all-in call, P' = P.
+3. **Bounty EV (§15).** The chance hero collects is P(win or tie the main pot), not equity. Each payment is
+   capped at the payer's stack after that branch's pot (a caller put all-in pays nothing), and a second
+   bounty is paid from what the first one left.
+
+**For Astra:** the chosen size's `evByActionBb` key gets more decimals when it rounds onto a preset with a
+different amount (`bet:0.504` next to `bet:0.5`); `action()` already parses it. SZ_* `data.sizePct` now has
+three decimals.
