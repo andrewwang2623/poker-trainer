@@ -141,10 +141,10 @@ export function liveOdds(view, opponents = [], { rng, iterations = LIVE_ODDS_ITE
     legal: { toCall }, heroCommitted: me.committedStreet, heroSeat: view.seat, seats: view.players,
   }) : view?.pot;
   const potOdds = toCall > 0 ? r4(toCall / (matchedPot + toCall)) : null;
+  // Nothing to price once hero is out of the hand or it's over.
   const done = view?.street === 'showdown' || view?.street === 'complete';
-  if (!me || me.folded || done || view.holeCards?.length !== 2 || live.length === 0) {
-    return { equity: null, potOdds: done ? null : potOdds };
-  }
+  if (!me || me.folded || done) return { equity: null, potOdds: null };
+  if (view.holeCards?.length !== 2 || live.length === 0) return { equity: null, potOdds };
   const random = rng ?? createRng(deriveSeed(`${view.handId}:${view.events.length}`, 'liveOdds'));
   const withProfiles = live.map((p, i) => ({ seat: p.seat, profile: p.profile ?? opponents[i] ?? null }));
   const ranges = opponentRanges({

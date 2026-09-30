@@ -365,3 +365,11 @@ test('pot odds use the effective call and the matched pot, not an opponent\'s un
   const odds = liveOdds(getView(play(hand(), [[0, 'raise', 100]]), 1), [], { rng: createRng(3) });
   assert.equal(odds.potOdds, 0.475);
 });
+
+test('liveOdds: both null once hero has folded, even while others still bet', () => {
+  // 3-handed, button 0 = hero folds first; the SB then raises, so hero would "owe" 3bb.
+  const state = play(makeHand({ n: 3, button: 0, hero: 0, holes: { 0: ['7c', '2d'] } }),
+    [[0, 'fold'], [1, 'raise', 3]]);
+  assert.equal(isComplete(state), false);
+  assert.deepEqual(liveOdds(getView(state, 0), [], { rng: createRng(1) }), { equity: null, potOdds: null });
+});
