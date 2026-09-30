@@ -354,7 +354,7 @@ export const PROFITABILITY_DISCLAIMER =
  * @property {StatsSummary|null} heroStats  Hero's 'session' stats, null if tracker not wired.
  */
 
-/** @typedef {Object<HandClass, number>} HandRange  Frequency 0..1 per hand class; missing = 0. */
+/** @typedef {Object<HandClass|string, number>} HandRange  Frequency 0..1 per hand class or exact combo ("AsKd"); missing = 0. */
 
 /**
  * RangeChart[position][depthBand][action]. `call` and `threeBet` are versus a single open raise.
@@ -526,6 +526,6 @@ export const PROFITABILITY_DISCLAIMER =
  * @property {number} coachedHands
  * @property {number} rakePer100
  * @property {{flagId: string, count: number, evLossBb: number}[]} topLeaks  Up to 5, by evLossBb.
- * @property {{bbPer100Delta: number, evLossPer100Delta: number, vpipDelta: number|null}|null} trend
+ * @property {{bbPer100Delta: number, evLossPer100Delta: number|null, vpipDelta: number|null}|null} trend
  * @property {ProfitabilityEstimate} profitability
  */

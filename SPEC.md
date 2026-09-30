@@ -179,7 +179,7 @@ numOpponents, inPosition, facing, opponentSeats, action, allIn`.
 
 **CoachDecision** `{decisionIndex, equity, equitySamples, potOdds, evByActionBb, bestAction, evLossBb, chart,
 texture}`. **CoachResult** `{handId, version, decisions, flags, totalEvLossBb, grade}`. `grade` is `major` if any
-major flag or `totalEvLossBb ≥ 5`, `minor` if any flag, and `clean` otherwise.
+major flag or `totalEvLossBb ≥ 5`, `minor` if any minor flag, and `clean` otherwise (info flags alone stay `clean`).
 
 **HandRecord**: `schemaVersion, id, timestamp, sessionId, seed, stakes, numPlayers, heroSeat, heroPosition,
 buttonSeat, players[{seat, name, position, isHero, startStackBb, holeCards, profile}], board, events, result,
@@ -249,7 +249,7 @@ formatSummary({stats: StatsSummary[], patterns: CoachFlag[], stakes}, {includePr
 
 ### Data (`src/data/index.js`)
 `HandStore`: `put(record)`, `putMany(records)`, `get(id)`, `getAll()`, `getLatest(n)` (newest first),
-`count()`, `clear()`. All return Promises. IndexedDB database `poker-trainer`, store `hands`, keyPath `id`,
+`count()`, `clear()`, `replaceAll(records)` (atomic: on any failure the old store is kept). All return Promises. IndexedDB database `poker-trainer`, store `hands`, keyPath `id`,
 index `timestamp`. `createMemoryStore()` implements the same interface for tests and fallback.
 `src/data/ranges.js` exports `RANGE_CHART` (a RangeChart, §5) and `getChartRange(position, band, action) → HandRange`.
 It imports only `shared` and never touches IndexedDB, so bots and the coach can import it under Node.
@@ -281,6 +281,8 @@ Hand loop in main.js/ui:
    the same deal. The `createdAt` part of `handId` keeps record ids unique either way.
 2. While the hand isn't complete: the hero seat waits for UI input, and bot seats call `bots.decideAction`.
 3. `buildHandRecord`, then `record.coach = coach?.analyzeHand(...) ?? null`, then `tracker?.recordHand(record)`.
+   **New hand** mid-hand: if hero has folded or has no decisions left, the rest of the hand plays out instantly and
+   is recorded normally; if hero still has decisions, the hand is discarded unrecorded.
    Keep the last 10 records in memory for export when the tracker is absent.
 
 UI: a felt oval table with seats placed around it. Each seat shows an avatar circle (color + initials), name, tier
@@ -349,7 +351,8 @@ Each opponent's range at a decision comes from its profile and preflop action:
 - Postflop: if the opponent bet or raised on the current street, drop the weakest 30% × (1 − bluffFreq) of
   the range by made-hand strength.
 
-Equity is a Monte Carlo `computeEquity` against all live opponents, 2000 samples, with
+Equity is a Monte Carlo `computeEquity` against all live opponents (ranges keep per-combo weights, e.g. `"AsKd": 0.8`, so narrowing
+is never undone), 2000 samples, with
 `rng = createRng(deriveSeed(seed, 'coach'))`.
 
 ### 8.2 EV model (bb, approximate; constants live in `src/coach/ev.js`)
@@ -362,7 +365,14 @@ Where:
 - `P` is the pot before the action and `C` is the amount to call.
 - `R` is realization: 1.0 on the river or all-in, otherwise 0.95 in position and 0.85 out of position.
 - `F = Π opponents clamp(foldToBet × (0.6 + 0.53·A/P), 0.05, 0.9)`.
-- `E' = 0.85·E` is equity against a calling range.
+- `E' = 0.85·E` is equity against a calling range. For an overbet (`f = A/P > 1`), `E' = 0.85·E/√f`
+  (`OVERBET_EXP = 0.5`), and the fold estimate stops growing past `f = 2` (`FOLD_SIZE_CAP`). Without these the
+  literal formula rates a huge shove as the best play in almost every spot.
+- Amounts are what opponents can actually match: `A` is capped at the deepest live opponent's stack, and for
+  pot odds and calls `P` excludes other seats' chips above hero's level after calling (the matched pot).
+  `requiredEquity = C / (P + C)` on that pot.
+- Bounties (§15): continuing actions add P(win or tie the main pot) × the total bounty payout, capped per payer
+  at the stack left after the pot, and only when `paysOn` allows the way it would be won.
 
 Candidates are fold/check, call, and bet/raise at 0.5, 0.75 and 1.0 pot plus all-in (legal ones only), plus the
 chosen size. `evLossBb = max(EV) − EV(chosen)`, floored at 0.
@@ -376,6 +386,9 @@ Severity: `major` if evLossBb ≥ 3, `minor` if ≥ 0.5, and `info` below that (
 ### 8.3 Flag IDs and data fields
 Every flag has the common fields (§5). `oppTier` is the tier of the last aggressor, or of the single
 remaining opponent. The `data` fields are:
+
+At most one PF_* flag per decision (the most specific one), so a mistake is never counted twice. All-ins are
+exempt from both SZ_* flags. Sizes are compared exactly, not rounded.
 
 | id | when | data |
 |---|---|---|
