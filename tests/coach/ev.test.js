@@ -159,3 +159,24 @@ test('overbet guards see the amount opponents can match, not the announced shove
   const F = 0.4 * (0.6 + 0.53);
   close(shove.ev, Math.round((F * 10 + (1 - F) * (0.85 * 0.6 * 30 - 10)) * 100) / 100);
 });
+
+test('the chosen size is evaluated at its exact amount, even when it rounds to a preset key', () => {
+  // 5.04bb into 10bb rounds to "bet:0.5", but the ½-pot preset is 5.00bb.
+  const cands = candidateActions(flopSpot(), { type: 'bet', amount: 504 });
+  const chosen = cands.find((c) => c.chosen);
+  assert.equal(chosen.to, 504);
+  assert.equal(cands.find((c) => c.key === 'bet:0.5').chosen, undefined);
+  assert.equal(new Set(cands.map((c) => c.key)).size, cands.length, 'keys stay unique');
+  assert.equal(chosen.key, 'bet:0.504');
+  // In a deep 1000bb pot the 4bb difference shows in the EV.
+  const deep = flopSpot({
+    pot: 100000, legal: { types: ['check', 'bet'], toCall: 0, minTo: 100, maxTo: 1000000 },
+    opponents: [{ seat: 1, allIn: false, stack: 1000000, committedStreet: 0, stats: { foldToBet: 0.4 } }],
+  });
+  const evs = evaluateCandidates(deep, candidateActions(deep, { type: 'bet', amount: 50400 }));
+  const exact = evaluateCandidates(deep, [{ key: 'x', type: 'bet', to: 50400 }])[0];
+  assert.equal(evs.find((c) => c.chosen).ev, exact.ev);
+  assert.notEqual(exact.ev, evs.find((c) => c.key === 'bet:0.5').ev);
+  // An exact preset amount still reuses the preset.
+  assert.equal(candidateActions(flopSpot(), { type: 'bet', amount: 500 }).find((c) => c.chosen).key, 'bet:0.5');
+});

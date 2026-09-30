@@ -94,12 +94,19 @@ export function uncalledExcess(spot) {
   return others.reduce((sum, o) => sum + Math.max(0, o.committedStreet - after), 0);
 }
 
-/** Key for a bet/raise of `to` chips (see candidateActions). */
-export function sizeKey(type, to, spot) {
+/**
+ * Key for a bet/raise of `to` chips (see candidateActions): "bet:0.33" (share of the pot), or
+ * "allIn". A key in `taken` gets more decimals, so a size never borrows another candidate's key.
+ */
+export function sizeKey(type, to, spot, taken = new Set()) {
   if (to >= spot.legal.maxTo) return 'allIn';
   const add = to - spot.heroCommitted;
   const frac = (add - spot.legal.toCall) / (spot.pot + spot.legal.toCall);
-  return `${type}:${round2(frac)}`;
+  for (const digits of [2, 3, 4]) {
+    const key = `${type}:${Number(frac.toFixed(digits))}`;
+    if (!taken.has(key)) return key;
+  }
+  return `${type}:${frac}`;
 }
 
 /**
@@ -107,7 +114,8 @@ export function sizeKey(type, to, spot) {
  * all-in (legal sizes only), plus the chosen action.
  * @param {{legal: Object, pot: number, heroCommitted: number}} spot  chips
  * @param {{type: string, amount?: number}} chosen
- * @returns {{key: string, type: string, to: number|null}[]} chosen last if it isn't a preset
+ * @returns {{key: string, type: string, to: number|null}[]} chosen last unless it is a preset's
+ *   exact amount
  */
 export function candidateActions(spot, chosen) {
   const { legal, pot, heroCommitted } = spot;
@@ -125,10 +133,14 @@ export function candidateActions(spot, chosen) {
     out.push({ key: 'allIn', type: aggro, to: legal.maxTo });
   }
   if (chosen) {
+    // Reuse a preset only for the exact same amount; EV(chosen) is always at hero's own size.
     const to = chosen.type === 'bet' || chosen.type === 'raise' ? chosen.amount : null;
-    const key = to === null ? chosen.type : sizeKey(chosen.type, to, spot);
-    if (!out.some((c) => c.key === key)) out.push({ key, type: chosen.type, to, chosen: true });
-    else out.find((c) => c.key === key).chosen = true;
+    const same = out.find((c) => (to === null ? c.type === chosen.type : c.to === to));
+    if (same) same.chosen = true;
+    else {
+      const key = to === null ? chosen.type : sizeKey(chosen.type, to, spot, new Set(out.map((c) => c.key)));
+      out.push({ key, type: chosen.type, to, chosen: true });
+    }
   }
   return out;
 }
