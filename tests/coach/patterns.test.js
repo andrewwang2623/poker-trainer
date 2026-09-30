@@ -131,3 +131,20 @@ test('PAT_REPEATED_LEAK: the same hand-level flag 5+ times in the last 100 hands
   const flags = byId(detectPatterns(recs, 'micro'), 'PAT_REPEATED_LEAK');
   assert.deepEqual(flags.map((f) => f.data), [{ flagId: 'EQ_BAD_CALL', count: 5, evLossBb: 10, window: 100 }]);
 });
+
+test('exact thresholds: an 8pp VPIP−PFR gap is not PAT_LOW_PFR; a 10pp VPIP rise is PAT_TILT', () => {
+  // 7/50 − 3/50 is exactly 0.08 but 0.08000000000000002 in floats.
+  const gap = records(50, (i) => ({ ...solid(i), vpip: i < 7, pfr: i < 3 }));
+  assert.equal(byId(detectPatterns(gap, 'micro'), 'PAT_LOW_PFR').length, 0);
+  const wider = records(50, (i) => ({ ...solid(i), vpip: i < 8, pfr: i < 3 }));
+  assert.equal(byId(detectPatterns(wider, 'micro'), 'PAT_LOW_PFR').length, 1);
+
+  // VPIP 16/80 = 20% before the 60bb loss, 6/20 = 30% after: a rise of exactly 10pp.
+  const tilt = records(120, (i) => ({
+    ...solid(i), vpip: i < 80 ? i % 5 === 0 : i > 80 && i <= 86, heroNetBb: i === 80 ? -60 : 0,
+  }));
+  const [flag] = byId(detectPatterns(tilt, 'micro'), 'PAT_TILT');
+  assert.ok(flag, 'a 10pp rise meets the ≥ 10pp rule');
+  assert.deepEqual(flag.data, { lossBb: 60, vpipBefore: 0.2, vpipAfter: 0.3, handsAfter: 20 });
+  assert.equal(flag.severity, 'minor');
+});

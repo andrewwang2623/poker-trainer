@@ -18,6 +18,12 @@ export const LEAK_COUNT = 5;
 const r2 = (x) => Math.round(x * 100) / 100;
 const r3 = (x) => Math.round(x * 1000) / 1000;
 
+/** Rates are ratios of counts, so a difference that is exactly on a threshold can land a float ulp
+ *  either side of it; compare with this slack. */
+const EPS = 1e-9;
+const above = (x, threshold) => x > threshold + EPS;
+const atLeast = (x, threshold) => x >= threshold - EPS;
+
 /** Rate over records: occurrences / opportunities, with the opportunity count. */
 function rate(records, opp, occ) {
   let n = 0;
@@ -96,16 +102,16 @@ export function detectPatterns(records, stakes) {
     if (value === null || opps < PATTERN_MIN_OPPS) continue;
     const [lo, hi] = ranges[stat];
     const outside = side === 'high' ? value - hi : lo - value;
-    if (!(outside > 0)) continue;
-    flags.push(patternFlag(id, outside > hi - lo ? 'major' : 'minor', {
+    if (!above(outside, 0)) continue;
+    flags.push(patternFlag(id, above(outside, hi - lo) ? 'major' : 'minor', {
       stat, value: r3(value), target: [lo, hi], hands, window: PATTERN_WINDOW,
     }));
   }
 
   const { vpip, pfr } = stats;
-  if (vpip.value !== null && vpip.opps >= PATTERN_MIN_OPPS && vpip.value - pfr.value > PFR_GAP) {
+  if (vpip.value !== null && vpip.opps >= PATTERN_MIN_OPPS && above(vpip.value - pfr.value, PFR_GAP)) {
     const gap = vpip.value - pfr.value;
-    flags.push(patternFlag('PAT_LOW_PFR', gap - PFR_GAP > PFR_GAP ? 'major' : 'minor', {
+    flags.push(patternFlag('PAT_LOW_PFR', above(gap - PFR_GAP, PFR_GAP) ? 'major' : 'minor', {
       vpip: r3(vpip.value), pfr: r3(pfr.value), gap: r3(gap), hands, window: PATTERN_WINDOW,
     }));
   }
@@ -125,8 +131,8 @@ function detectTilt(records) {
     const before = vpipOf(records.slice(0, i));
     const after = vpipOf(records.slice(i + 1, i + 1 + TILT_HANDS));
     const rise = after - before;
-    if (rise < TILT_RISE) continue;
-    return patternFlag('PAT_TILT', rise - TILT_RISE > TILT_RISE ? 'major' : 'minor', {
+    if (!atLeast(rise, TILT_RISE)) continue;
+    return patternFlag('PAT_TILT', above(rise - TILT_RISE, TILT_RISE) ? 'major' : 'minor', {
       lossBb: r2(-net), vpipBefore: r3(before), vpipAfter: r3(after), handsAfter: TILT_HANDS,
     });
   }
