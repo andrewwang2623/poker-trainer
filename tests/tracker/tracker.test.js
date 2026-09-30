@@ -110,3 +110,15 @@ test('malformed coaching data and stats reject before replace changes storage', 
     assert.equal((await tracker.getStats('all')).hands, 1);
   }
 });
+
+test('failed replace writes leave every existing hand intact', async () => {
+  const store = createMemoryStore();
+  const original = [recordFixture(0), recordFixture(1)];
+  await store.putMany(original);
+  const before = await store.getAll();
+  const failedWrite = async () => { throw new Error('disk full'); };
+  const tracker = createTracker({ ...store, putMany: failedWrite, replaceAll: failedWrite });
+  await assert.rejects(tracker.importJSON(JSON.stringify({ schemaVersion: 1, hands: [recordFixture(2)] }),
+    { mode: 'replace' }), /disk full/);
+  assert.deepEqual(await store.getAll(), before);
+});

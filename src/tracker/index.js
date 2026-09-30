@@ -72,8 +72,10 @@ export function createTracker(store, { sessionId, now = Date.now } = {}) {
           ids.add(record.id);
           added.push(record);
         }
-        if (mode === 'replace') await store.clear();
-        await store.putMany(added);
+        if (mode === 'replace') {
+          if (typeof store.replaceAll !== 'function') throw new TypeError('Hand storage does not support atomic replacement.');
+          await store.replaceAll(added);
+        } else await store.putMany(added);
         return { added: added.length, skipped };
       });
     },
