@@ -373,3 +373,18 @@ test('liveOdds: both null once hero has folded, even while others still bet', ()
   assert.equal(isComplete(state), false);
   assert.deepEqual(liveOdds(getView(state, 0), [], { rng: createRng(1) }), { equity: null, potOdds: null });
 });
+
+test('sizing thresholds compare the exact bet size, not the rounded percentage', () => {
+  // 20bb pot on a dry K72 flop: 2.98bb is 14.9% of the pot, under the 25% − 10pp floor.
+  const sized = (toBb) => analyze(recordOf(HU({ hero: 1, holes: { 1: ['Ah', 'Kc'] }, board: ['Kd', '7h', '2c', '9s', '4d'] }),
+    [[0, 'raise', 10], [1, 'call'], [1, 'bet', toBb]]));
+  const small = sized(2.98);
+  assert.equal(small.decisions[1].texture, 'dry');
+  assert.deepEqual(flagIds(small, 1).filter((id) => id.startsWith('SZ_')), ['SZ_TOO_SMALL']);
+  assert.deepEqual(flagIds(sized(3), 1).filter((id) => id.startsWith('SZ_')), [], 'exactly 15% is not below it');
+  // Wet 987: a bet of exactly 66% − 10pp (11.2bb, 56%) isn't below the floor either.
+  const wet = analyze(recordOf(HU({ hero: 1, holes: { 1: ['Ah', 'Kc'] }, board: ['9h', '8h', '7c', '2s', '4d'] }),
+    [[0, 'raise', 10], [1, 'call'], [1, 'bet', 11.2]]));
+  assert.equal(wet.decisions[1].texture, 'wet');
+  assert.deepEqual(flagIds(wet, 1).filter((id) => id.startsWith('SZ_')), []);
+});

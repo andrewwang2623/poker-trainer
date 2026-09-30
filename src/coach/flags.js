@@ -13,6 +13,8 @@ export const RIVER_POLAR_PCT = Object.freeze([0.75, 1.25]);
 /** A bet is flagged below the texture range by this much, or above it by SIZE_OVER. */
 export const SIZE_UNDER = 0.1;
 export const SIZE_OVER = 0.25;
+/** Float slack for the size thresholds: a bet exactly on a threshold is not past it. */
+const SIZE_EPS = 1e-9;
 /** River bets at or above this equity (nutted) or below BLUFF_EQUITY count as polarized. */
 export const RIVER_NUT_EQUITY = 0.75;
 
@@ -71,12 +73,13 @@ export function decisionFlags(a) {
   }
 
   if (type === 'bet' && d.street !== 'preflop' && texture && a.sizing) {
-    const sizePct = r2(sizeFraction(ctx, d.action.amount));
+    // Thresholds compare the exact size (with float slack), never the rounded percentage.
+    const size = sizeFraction(ctx, d.action.amount);
     const [lo, hi] = TEXTURE_PCT[texture];
     const polar = d.street === 'river' && (equity >= RIVER_NUT_EQUITY || equity < BLUFF_EQUITY);
-    const data = { sizePct, recommendedPct: [lo, hi], texture };
-    if (sizePct < lo - SIZE_UNDER && !d.allIn) flag('SZ_TOO_SMALL', data, a.sizing.lossBb);
-    if (sizePct > hi + SIZE_OVER && !d.allIn && !polar) flag('SZ_TOO_LARGE', data, a.sizing.lossBb);
+    const data = { sizePct: r3(size), recommendedPct: [lo, hi], texture };
+    if (size < lo - SIZE_UNDER - SIZE_EPS && !d.allIn) flag('SZ_TOO_SMALL', data, a.sizing.lossBb);
+    if (size > hi + SIZE_OVER + SIZE_EPS && !d.allIn && !polar) flag('SZ_TOO_LARGE', data, a.sizing.lossBb);
   }
 
   if (type === 'call' && (d.street === 'turn' || d.street === 'river') && d.facing === 'facingRaise' &&
