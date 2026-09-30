@@ -16,6 +16,10 @@ export function formatSummary({ stats, patterns = [], stakes }, { includePrompt 
   for (const stat of stats) {
     lines.push(`${windowName(stat.window)}  ${stat.hands}  ${Object.keys(COLUMNS).map(key => key === 'af' ? number(stat[key]) : percent(stat[key])).join(' ')}  ${signed(stat.bbPer100)}  ${signed(stat.evAdjBbPer100)} (${stat.evAdjCi95.map(signed).join(', ')})  ${stat.coachedHands ? number(stat.evLossPer100) : '—'} ${number(stat.rakePer100)}`);
   }
+  if (stats.some(stat => stat.bountyPer100 != null)) {
+    lines.push('Bounty accounting (base bb/100 and all-in EV exclude bounties):', 'Window  Bounty bb/100  bb/100 with bounties  Fold to bet');
+    for (const stat of stats) lines.push(`${windowName(stat.window)}  ${signed(stat.bountyPer100 ?? 0)}  ${signed(stat.bbPer100WithBounty ?? stat.bbPer100)}  ${percent(stat.foldToBet)}`);
+  }
   if (config) lines.push(`Winning ranges (${config.label.split(' ')[0]}): ${Object.entries(COLUMNS).map(([key, label]) => `${label} ${config.winningRanges[key].map(key === 'af' ? number : percent).join('–')}`).join(', ')}`);
   for (const stat of stats.filter(item => item.trend)) {
     const trend = stat.trend;

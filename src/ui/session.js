@@ -14,6 +14,8 @@ export function createEngineSession(engine, bots, initialSettings = {}, options 
   const seedSource = options.seedSource ?? (() => Math.floor(sessionRng() * 0x100000000));
   const recentHands = [];
   const reads = bots.createHeroReads?.() ?? null;
+  const completionErrors = new Map();
+  let heroStats = null;
   let settings = initialSettings;
   let botSpeed = normalizeBotSpeed(initialSettings.botSpeed);
   let botPacing = initialSettings.botPacing !== false;
@@ -59,20 +61,34 @@ export function createEngineSession(engine, bots, initialSettings = {}, options 
     notify();
   }
 
-  async function finishHand() {
+  async function refreshHeroStats() {
+    try { heroStats = await options.tracker?.getStats('session') ?? null; }
+    catch { heroStats = null; }
+  }
+
+  function finishHand() {
     if (recorded || !engine.isComplete(state)) return;
     recorded = true;
     const record = engine.buildHandRecord(state, { sessionId, timestamp: createdAt });
     reads?.observe(record);
     if (options.coach) {
-      record.coach = options.coach.analyzeHand(record, {
-        rng: engine.createRng(engine.deriveSeed(state.seed, 'coach')),
-      });
+      try {
+        record.coach = options.coach.analyzeHand(record, {
+          rng: engine.createRng(engine.deriveSeed(record.seed, 'coach')),
+        }) ?? null;
+      } catch (error) { completionErrors.set(record.id, `Coach unavailable: ${error.message}`); }
     }
     recentHands.unshift(record);
     if (recentHands.length > 10) recentHands.pop();
-    await options.tracker?.recordHand(record);
-    notify();
+    const finishing = (async () => {
+      try { await options.tracker?.recordHand(record); }
+      catch (error) {
+        completionErrors.set(record.id, [completionErrors.get(record.id), `Hand could not be saved: ${error.message}`].filter(Boolean).join(' · '));
+      }
+      await refreshHeroStats();
+      notify();
+    })();
+    return finishing;
   }
 
   // Resolve cancelled waits too, so abandoned act()/ready promises can settle.
@@ -94,6 +110,7 @@ export function createEngineSession(engine, bots, initialSettings = {}, options 
     if (pending) return pending;
     const current = generation;
     const run = (async () => {
+      if (options.tracker?.getStats) await refreshHeroStats();
       while (current === generation && !engine.isComplete(state) && state.actingSeat !== state.heroSeat) {
         const seat = state.actingSeat;
         if (seat === null) break;
@@ -103,7 +120,7 @@ export function createEngineSession(engine, bots, initialSettings = {}, options 
         if (current !== generation) return;
         const view = engine.getView(state, seat);
         const action = bots.decideAction(view, state.players[seat].profile, {
-          rng: botRng, heroStats: reads?.summary() ?? null,
+          rng: botRng, heroStats: heroStats?.hands >= 30 ? heroStats : reads?.summary() ?? heroStats,
         });
         state = engine.applyAction(state, action);
         notify();
@@ -132,8 +149,19 @@ export function createEngineSession(engine, bots, initialSettings = {}, options 
   return {
     ready,
     getState: () => state,
+    getSessionId: () => sessionId,
     getLegalActions: () => state.actingSeat === state.heroSeat ? engine.getLegalActions(state) : null,
     getRecentHands: () => recentHands.slice(),
+    getCompletionError: id => completionErrors.get(id) ?? '',
+    refreshHeroStats,
+    getLiveOdds() {
+      if (!options.coach?.liveOdds || engine.isComplete(state) || state.actingSeat !== state.heroSeat) return null;
+      const view = engine.getView(state, state.heroSeat);
+      const opponents = view.players.filter(player => !player.isHero && !player.folded).map(player => player.profile);
+      return options.coach.liveOdds(view, opponents, {
+        rng: engine.createRng(engine.deriveSeed(state.seed, `liveOdds:${state.events.length}`)),
+      });
+    },
     setBotSpeed(value) { botSpeed = normalizeBotSpeed(value); },
     setBotPacing(value) { botPacing = value !== false; },
     setOutBotSpeed(value) { outBotSpeed = normalizeBotSpeed(value); },

@@ -8,6 +8,9 @@ import { renderLog } from './log.js';
 import { renderSettings } from './settings.js';
 import { applyAppearance, loadAppearance, saveAppearance } from './appearance.js';
 import { createExportPanel } from './export.js';
+import { renderReview } from './review.js';
+import { createDashboard } from './dashboard.js';
+import { createTrackerTools } from './tracker-tools.js';
 import { loadStraddle, normalizeStraddle, saveStraddle } from './straddle-settings.js';
 import { loadBounty, normalizeBounty, saveBounty } from './bounty-settings.js';
 import { loadBotPacing, loadBotSpeed, loadOutBotSpeed, normalizeBotSpeed, saveBotPacing, saveBotSpeed, saveOutBotSpeed } from './bot-speed.js';
@@ -28,6 +31,12 @@ export function mountApp(rootEl, app = {}) {
   session.setOutBotSpeed?.(settings.outBotSpeed);
   const boardReveal = createBoardReveal();
   const exportPanel = app.features?.export && app.exporter ? createExportPanel(app, session) : null;
+  const dashboard = app.features?.dashboard && app.tracker ? createDashboard(app, session) : null;
+  let page = 'table';
+  const trackerTools = app.features?.tracker && app.tracker ? createTrackerTools(app, session, {
+    getStakes: () => dashboard ? dashboard.getStakes() : session.getState().stakes,
+    onRestore: () => dashboard?.refresh(true),
+  }) : null;
   let timerSettings = loadTimer();
   let timerNode = null;
   let destroyed = false;
@@ -49,6 +58,9 @@ export function mountApp(rootEl, app = {}) {
   let error = '';
   let revealedHandId = null;
   let rabbitHandId = null;
+  let liveOddsEnabled = false;
+  let oddsKey = null;
+  let liveOdds = null;
 
   function render() {
     if (destroyed) return;
@@ -68,11 +80,17 @@ export function mountApp(rootEl, app = {}) {
       ? `${stakes.label} · $${stakes.sb.toFixed(2)}/$${stakes.bb.toFixed(2)}` : state.stakes));
     const dashboardLink = element('a', 'dashboard-link', 'Dashboard ↗');
     dashboardLink.href = '#dashboard';
-    dashboardLink.hidden = !app.features?.dashboard;
+    dashboardLink.hidden = !dashboard;
+    dashboardLink.setAttribute('aria-current', page === 'dashboard' ? 'page' : 'false');
+    dashboardLink.addEventListener('click', event => { event.preventDefault(); page = 'dashboard'; timer.stop(); render(); });
+    const tableLink = element('a', 'table-link', 'Table'); tableLink.href = '#table'; tableLink.hidden = !dashboard;
+    tableLink.setAttribute('aria-current', page === 'table' ? 'page' : 'false');
+    tableLink.addEventListener('click', event => { event.preventDefault(); page = 'table'; render(); });
+    meta.append(tableLink);
     meta.append(dashboardLink);
     masthead.append(title, meta);
     const intro = element('div', 'intro-row');
-    intro.append(element('div', '', 'Practice table'), element('span', '', `${state.numPlayers} players · No-Limit Hold’em${state.handId.startsWith('mock-') ? ' · Sample hand' : ''}`));
+    intro.append(element('div', '', page === 'dashboard' ? 'Progress & study' : 'Practice table'), element('span', '', `${state.numPlayers} players · No-Limit Hold’em${state.handId.startsWith('mock-') ? ' · Sample hand' : ''}`));
     const layout = element('main', 'game-layout');
     const left = element('div', 'game-column');
     left.append(renderTable(state, boardReveal(state), revealHands, rabbitHunt));
@@ -118,6 +136,26 @@ export function mountApp(rootEl, app = {}) {
     timerNode.setAttribute('aria-label', 'Time remaining for your action');
     controls.querySelector('.panel-heading').append(timerNode);
     left.append(controls);
+    if (app.features?.coach && app.coach?.liveOdds && session.getLiveOdds) {
+      const oddsPanel = element('section', 'panel live-odds');
+      const label = element('label', 'export-toggle');
+      const toggle = element('input');
+      toggle.type = 'checkbox'; toggle.checked = liveOddsEnabled;
+      toggle.addEventListener('change', () => { liveOddsEnabled = toggle.checked; render(); });
+      label.append(toggle, element('span', '', 'Show live odds (training aid)'));
+      oddsPanel.append(label);
+      if (liveOddsEnabled && legal) {
+        const key = `${state.handId}:${state.events.length}`;
+        if (key !== oddsKey) {
+          oddsKey = key;
+          try { liveOdds = session.getLiveOdds(); } catch { liveOdds = null; }
+        }
+        oddsPanel.append(element('p', '', liveOdds
+          ? `Estimated equity ${Math.round(liveOdds.equity * 100)}% · Pot odds ${liveOdds.potOdds == null ? '—' : `${Math.round(liveOdds.potOdds * 100)}%`}`
+          : 'Live odds unavailable.'));
+      }
+      left.append(oddsPanel);
+    }
     if (error) left.append(element('p', 'error-message', error));
     const right = element('aside', 'sidebar');
     right.append(renderLog(state), renderSettings(settings, next => {
@@ -158,26 +196,29 @@ export function mountApp(rootEl, app = {}) {
       saveTimer(next);
       render();
     }));
-    const coachPanel = element('section', 'panel coach-panel');
-    coachPanel.id = 'coach-feedback';
-    coachPanel.hidden = !app.features?.coach || !state.result;
-    coachPanel.append(element('h2', '', 'Coach feedback'), element('p', '', 'Feedback appears after the coach is connected.'));
-    right.append(coachPanel);
+    const record = session.getRecentHands?.().find(record => record.id === state.handId);
+    if (app.features?.coach && state.result && record) {
+      right.append(renderReview(record, app.explain?.explainFlag, session.getCompletionError?.(state.handId)));
+    } else if (session.getCompletionError?.(state.handId)) {
+      right.append(element('p', 'error-message', session.getCompletionError(state.handId)));
+    }
     if (exportPanel) {
       exportPanel.refresh();
       right.append(exportPanel.node);
     }
-    const dashboardPanel = element('section', 'panel dashboard-panel');
-    dashboardPanel.id = 'dashboard';
-    dashboardPanel.hidden = !app.features?.dashboard;
-    dashboardPanel.append(element('h2', '', 'Dashboard'), element('p', '', 'Your long-term stats will appear here.'));
-    right.append(dashboardPanel);
     layout.append(left, right);
+    layout.hidden = page === 'dashboard';
     shell.append(masthead, intro, layout);
+    if (dashboard) {
+      dashboard.node.hidden = page !== 'dashboard';
+      if (page === 'dashboard') dashboard.refresh();
+      shell.append(dashboard.node);
+    }
+    if (trackerTools) shell.append(trackerTools.node);
     rootEl.replaceChildren(shell);
     const list = rootEl.querySelector('.event-list');
     if (list) list.scrollTop = list.scrollHeight;
-    const timedTurn = timerSettings.enabled && !busy && legal &&
+    const timedTurn = page === 'table' && timerSettings.enabled && !busy && legal &&
       state.actingSeat === state.heroSeat && !state.result;
     timer.sync(timedTurn ? `${state.handId}:${state.street}:${state.events.length}` : null, timerSettings.seconds);
   }
@@ -216,5 +257,5 @@ export function mountApp(rootEl, app = {}) {
 
   const unsubscribe = session.subscribe?.(render);
   render();
-  return { render, destroy: () => { destroyed = true; timer.stop(); unsubscribe?.(); rootEl.replaceChildren(); } };
+  return { render, destroy: () => { destroyed = true; dashboard?.destroy(); timer.stop(); unsubscribe?.(); rootEl.replaceChildren(); } };
 }
