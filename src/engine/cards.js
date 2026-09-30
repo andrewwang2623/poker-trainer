@@ -85,3 +85,19 @@ export function classCombos(cls) {
   }
   return combos;
 }
+
+/**
+ * The combos a range key stands for: a hand class ("AKs") or one exact combo ("AsKs"), so a range
+ * can weight single combos (the coach's narrowed ranges).
+ * @param {string} key
+ * @returns {[number, number][]}
+ */
+export function rangeKeyCombos(key) {
+  if (key.length === 4) {
+    const a = cardCode(key.slice(0, 2));
+    const b = cardCode(key.slice(2));
+    if (a === b) throw new RangeError(`Invalid combo: ${key}`);
+    return [[a, b]];
+  }
+  return classCombos(key);
+}

@@ -8,8 +8,14 @@ import {
 import { decisionContexts } from '../../src/coach/context.js';
 import { makeHand, recordOf, PROFILES } from './_hands.js';
 
+/** Share of all 1326 combos; keys are classes or (after narrowing) exact combos such as "KhQh". */
 const coverage = (range) => Object.entries(range)
-  .reduce((s, [c, f]) => s + f * (c.length === 2 ? 6 : c[2] === 's' ? 4 : 12), 0) / 1326;
+  .reduce((s, [c, f]) => s + f * (c.length === 4 ? 1 : c.length === 2 ? 6 : c[2] === 's' ? 4 : 12), 0) / 1326;
+/** Combo-keyed weights of a class's combos in a narrowed range. */
+const comboWeights = (range, cls) => Object.entries(range)
+  .filter(([c]) => c.length === 4 && [c[0] + c[2], c[2] + c[0]].includes(cls.slice(0, 2)) &&
+    (cls.length === 2 || (c[1] === c[3]) === (cls[2] === 's')))
+  .map(([, w]) => w);
 
 test('preflop ranges follow the action: raise, 3-bet, call band, BB check complement, not yet acted', () => {
   const stats = { vpip: 0.3, pfr: 0.2, threeBet: 0.08 };
@@ -47,9 +53,9 @@ test('postflop: a bet or raise on this street drops the weakest 30% × (1 − bl
   const before = coverage(range);
   const after = coverage(narrowed);
   assert.ok(after < before * 0.8 && after > before * 0.6, `${after} vs ${before}`);
-  assert.equal(narrowed.KQs, range.KQs, 'top pair survives');
-  assert.equal(narrowed.QJo ?? 0, 0, 'queen-high is dropped');
-  assert.ok(!(narrowed.A8o > 0), 'weak ace-high is dropped');
+  assert.deepEqual(comboWeights(narrowed, 'KQs'), [1, 1, 1], 'top pair survives (Ks is on the board)');
+  assert.deepEqual(comboWeights(narrowed, 'QJo'), [], 'queen-high is dropped');
+  assert.deepEqual(comboWeights(narrowed, 'A8o'), [], 'weak ace-high is dropped');
   assert.equal(dropWeakest(range, [], blocked, 0.3), range, 'no narrowing preflop');
 
   const events = [
@@ -113,4 +119,17 @@ test('straddle: the post is not a decision, the effective blind is 2bb and the s
   ]);
   assert.equal(walk.decisions.length, 0);
   assert.deepEqual(decisionContexts(walk), []);
+});
+
+test('narrowing keeps weights per combo: a class is never refilled with its dropped combos', () => {
+  // AA/KK on a four-spade board: the spade aces and kings made flushes, the rest only an overpair.
+  const board = ['9s', '8s', '2s', '3s', '4d'].map(cardCode);
+  const blocked = new Uint8Array(52);
+  for (const c of [...board, cardCode('Qs'), cardCode('Jh')]) blocked[c] = 1;
+  const kept = dropWeakest({ AA: 1, KK: 1 }, board, blocked, 0.3);
+  // 12 combos, drop 3.6: all three non-spade KK and 0.6 of the (tied) non-spade AA.
+  for (const combo of ['KhKd', 'KhKc', 'KdKc']) assert.equal(kept[combo] ?? 0, 0, combo);
+  for (const combo of ['AsAh', 'AsAd', 'AsAc', 'KsKh', 'KsKd', 'KsKc']) assert.equal(kept[combo], 1, combo);
+  for (const combo of ['AhAd', 'AhAc', 'AdAc']) assert.ok(Math.abs(kept[combo] - 0.8) < 1e-9, combo);
+  assert.ok(Math.abs(Object.values(kept).reduce((s, w) => s + w, 0) - 8.4) < 1e-9);
 });

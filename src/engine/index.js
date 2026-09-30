@@ -2,6 +2,7 @@
 export { createRng, deriveSeed, normalizeSeed, randInt } from './rng.js';
 export {
   fullDeck, shuffle, handClass, parseCard, formatCard, isValidCard, cardCode, codeToCard, classCombos,
+  rangeKeyCombos,
 } from './cards.js';
 export { evaluate, evaluateCodes, scoreLabel, scoreCategory, HAND_CATEGORIES } from './evaluator.js';
 export { computeEquity, forEachRunout } from './equity.js';

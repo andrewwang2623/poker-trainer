@@ -1,8 +1,10 @@
 // Opponent range estimates for the coach (SPEC §8.1). Each live opponent's range comes from its
 // profile and its preflop action, then on a postflop street where it bet or raised, the weakest
-// 30% × (1 − bluffFreq) of that range by made-hand strength is dropped.
+// 30% × (1 − bluffFreq) of that range by made-hand strength is dropped (leaving a combo-keyed range).
 // Pure: reads only the events and cards it is given, never hidden cards.
-import { HAND_STRENGTH_ORDER, cardCode, classCombos, evaluateCodes } from '../engine/index.js';
+import {
+  HAND_STRENGTH_ORDER, cardCode, codeToCard, rangeKeyCombos, evaluateCodes,
+} from '../engine/index.js';
 
 /** Share of the range dropped (× (1 − bluffFreq)) when the opponent bet or raised this street. */
 export const POSTFLOP_DROP = 0.3;
@@ -100,42 +102,49 @@ export function preflopRange(stats, action) {
   return strengthBand(pfr, 1.01);
 }
 
+/** An exact-combo range key, higher card first ("AsKd"), as used by narrowed ranges. */
+const comboKey = (a, b) => (a > b ? codeToCard(a) + codeToCard(b) : codeToCard(b) + codeToCard(a));
+
+/** Float slack when the dropped share lands exactly on a tie group's edge. */
+const DROP_EPS = 1e-9;
+
 /**
  * Drop the weakest `dropFrac` of a range (combo-weighted) by made-hand strength on this board.
- * Each class keeps weight in proportion to its surviving live combos.
+ * The result is keyed by exact combo, so a dropped combo can't come back through its class; combos
+ * with the same made hand are dropped together, keeping the share that lands inside the cut.
  */
 export function dropWeakest(range, boardCodes, blocked, dropFrac) {
   if (!(dropFrac > 0) || boardCodes.length < 3) return range;
   const hand = [0, 0, ...boardCodes];
   const combos = [];
-  for (const [cls, w] of Object.entries(range)) {
+  for (const [key, w] of Object.entries(range)) {
     if (!(w > 0)) continue;
-    for (const [a, b] of classCombos(cls)) {
+    for (const [a, b] of rangeKeyCombos(key)) {
       if (blocked[a] || blocked[b]) continue;
       hand[0] = a;
       hand[1] = b;
-      combos.push({ cls, w, score: evaluateCodes(hand) });
+      combos.push({ key: comboKey(a, b), w, score: evaluateCodes(hand) });
     }
   }
   combos.sort((x, y) => x.score - y.score);
-  const total = combos.reduce((s, c) => s + c.w, 0);
-  const live = {};
-  const kept = {};
-  let dropped = 0;
-  for (const c of combos) {
-    live[c.cls] = (live[c.cls] ?? 0) + 1;
-    if (dropped < dropFrac * total) dropped += c.w;
-    else kept[c.cls] = (kept[c.cls] ?? 0) + 1;
-  }
+  let toDrop = dropFrac * combos.reduce((s, c) => s + c.w, 0);
   const out = {};
-  for (const cls of Object.keys(kept)) out[cls] = range[cls] * (kept[cls] / live[cls]);
+  for (let i = 0; i < combos.length;) {
+    let j = i;
+    let groupW = 0;
+    while (j < combos.length && combos[j].score === combos[i].score) groupW += combos[j++].w;
+    const keep = toDrop >= groupW - DROP_EPS ? 0 : 1 - Math.max(0, toDrop) / groupW;
+    toDrop -= groupW;
+    if (keep > DROP_EPS) for (let k = i; k < j; k++) out[combos[k].key] = (out[combos[k].key] ?? 0) + combos[k].w * keep;
+    i = j;
+  }
   return Object.keys(out).length ? out : range;
 }
 
 function hasLiveCombo(range, blocked) {
-  for (const [cls, w] of Object.entries(range)) {
+  for (const [key, w] of Object.entries(range)) {
     if (!(w > 0)) continue;
-    for (const [a, b] of classCombos(cls)) if (!blocked[a] && !blocked[b]) return true;
+    for (const [a, b] of rangeKeyCombos(key)) if (!blocked[a] && !blocked[b]) return true;
   }
   return false;
 }

@@ -61,3 +61,16 @@ test('board textures', () => {
   assert.equal(boardTexture(['Kh', '7c', '2d']), 'dry');
   assert.equal(boardTexture(['Ah', '2c', '4d']), 'semiwet'); // wheel-connected
 });
+
+test('ranges may weight exact combos ("AsAh") alongside hand classes', async () => {
+  const { rangeKeyCombos, cardCode } = await import('../../src/engine/cards.js');
+  assert.deepEqual(rangeKeyCombos('AsKd'), [[cardCode('As'), cardCode('Kd')]]);
+  assert.equal(rangeKeyCombos('AKs').length, 4);
+  assert.throws(() => rangeKeyCombos('AsAs'), RangeError);
+  // River, hero Q-high flush: loses to the As flush, beats the non-spade kings. 3:1 weighting.
+  const r = computeEquity({
+    hero: ['Qs', 'Jh'], board: ['9s', '8s', '2s', '3s', '4d'],
+    villains: [{ AsAh: 1, KdKc: 3 }], iterations: 4000, rng: createRng(5),
+  });
+  assert.ok(Math.abs(r.equity - 0.75) < 0.03, String(r.equity));
+});

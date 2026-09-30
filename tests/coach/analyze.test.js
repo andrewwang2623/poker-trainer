@@ -338,3 +338,15 @@ test('every flag in random bot-played hands matches the §8.3 contract', () => {
   assert.ok(seen.size >= 8, `only saw ${[...seen]}`);
   for (const f of detectPatterns(records, 'low')) assert.ok(f.id.startsWith('PAT_') && f.street === null);
 });
+
+test('river bettor range: dropped combos stay dropped when computing equity', () => {
+  // Nit raised (AA/KK), then bet the river with bluffFreq 0: the weakest 30% (non-spade KK and
+  // some non-spade AA) is gone. Q-high flush beats 2.4 of the remaining 8.4 combos: 2/7.
+  const record = recordOf(HU({ hero: 1, profiles: { 0: PROFILES.nit }, holes: { 1: ['Qs', 'Jh'] },
+    board: ['9s', '8s', '2s', '3s', '4d'] }), [
+    [0, 'raise', 3], [1, 'call'], [1, 'check'], [0, 'check'], [1, 'check'], [0, 'check'], [1, 'check'],
+    [0, 'bet', 4], [1, 'call'],
+  ]);
+  const { equity } = analyze(record).decisions[4];
+  assert.ok(Math.abs(equity - 2 / 7) <= 0.03, `equity ${equity}, expected ~${(2 / 7).toFixed(3)}`);
+});

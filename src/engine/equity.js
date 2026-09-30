@@ -1,5 +1,5 @@
 // Equity by exact enumeration (known cards, ≤2 to come) or Monte Carlo.
-import { cardCode, classCombos } from './cards.js';
+import { cardCode, rangeKeyCombos } from './cards.js';
 import { evaluateCodes } from './evaluator.js';
 
 /**
@@ -49,14 +49,17 @@ export function forEachRunout({ boardCodes, deadCodes = [], exact, iterations = 
   return iterations;
 }
 
-/** Expand a HandRange into weighted combos, dropping ones that collide with blocked cards. */
+/**
+ * Expand a HandRange into weighted combos, dropping ones that collide with blocked cards. Keys are
+ * hand classes or exact combos (see rangeKeyCombos); a combo listed under both counts twice.
+ */
 function rangeCombos(range, blocked) {
   const combos = [];
   const cumulative = [];
   let total = 0;
-  for (const [cls, freq] of Object.entries(range)) {
+  for (const [key, freq] of Object.entries(range)) {
     if (!(freq > 0)) continue;
-    for (const [a, b] of classCombos(cls)) {
+    for (const [a, b] of rangeKeyCombos(key)) {
       if (blocked[a] || blocked[b]) continue;
       total += freq;
       combos.push([a, b]);
@@ -85,7 +88,7 @@ function pickCombo({ combos, cumulative, total }, rng) {
  * default stream, which would give every call the same samples.
  * @param {{hero: string[], board?: string[], villains: (string[]|Object<string, number>)[],
  *          dead?: string[], iterations?: number, rng?: () => number}} opts  rng is optional only
- *   when the result is exact.
+ *   when the result is exact. A range's keys are hand classes ("AKs") or exact combos ("AsKs").
  * @returns {{equity: number, win: number, tie: number, samples: number}}
  */
 export function computeEquity({ hero, board = [], villains, dead = [], iterations = 2000, rng }) {
