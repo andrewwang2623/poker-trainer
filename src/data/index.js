@@ -3,10 +3,14 @@ const newest = (a, b) => b.timestamp - a.timestamp || b.id.localeCompare(a.id);
 
 /** An isolated, asynchronous HandStore for tests and browsers without IndexedDB. */
 export function createMemoryStore() {
-  const hands = new Map();
+  let hands = new Map();
   return {
     async put(record) { hands.set(record.id, clone(record)); },
     async putMany(records) { for (const record of records) hands.set(record.id, clone(record)); },
+    async replaceAll(records) {
+      const replacement = new Map(records.map(record => [record.id, clone(record)]));
+      hands = replacement;
+    },
     async get(id) { return clone(hands.get(id)); },
     async getAll() { return [...hands.values()].sort(newest).map(clone); },
     async getLatest(n) { return (await this.getAll()).slice(0, Math.max(0, n)); },
@@ -42,6 +46,12 @@ export async function openHandStore({ indexedDB = globalThis.indexedDB } = {}) {
   return {
     put(record) { return this.putMany([record]); },
     putMany(records) { return transaction('readwrite', store => { for (const record of records) store.put(record); }); },
+    replaceAll(records) {
+      return transaction('readwrite', store => {
+        store.clear();
+        for (const record of records) store.put(record);
+      });
+    },
     get(id) { return transaction('readonly', (store, done) => { store.get(id).onsuccess = event => done(event.target.result); }); },
     getAll() { return transaction('readonly', (store, done) => { store.getAll().onsuccess = event => done(event.target.result.sort(newest)); }); },
     getLatest(n) {

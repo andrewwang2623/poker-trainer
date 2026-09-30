@@ -17,6 +17,7 @@ function actionText(event, decision = false) {
 }
 
 function handBlock(record, index, count, { hideOpponentCards = false, explain, rabbitCardsByHand } = {}) {
+  if (!Object.hasOwn(STAKES, record.stakes)) throw new RangeError('Unknown stakes');
   const stakes = STAKES[record.stakes];
   const hero = record.players.find(player => player.seat === record.heroSeat);
   const player = seat => record.players.find(item => item.seat === seat);

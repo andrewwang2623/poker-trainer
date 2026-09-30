@@ -3,7 +3,7 @@ import { summarize } from './stats.js';
 
 function validateRecord(record) {
   if (!record || record.schemaVersion !== SCHEMA_VERSION || typeof record.id !== 'string' || !record.id ||
-      !Number.isFinite(record.timestamp) || typeof record.sessionId !== 'string' || !STAKES[record.stakes] ||
+      !Number.isFinite(record.timestamp) || typeof record.sessionId !== 'string' || !Object.hasOwn(STAKES, record.stakes) ||
       !Number.isFinite(record.heroNetBb) || !Number.isFinite(record.heroEvNetBb) ||
       !Number.isFinite(record.heroRakeBb) || !record.statFlags || !record.result ||
       !Array.isArray(record.players) || !Array.isArray(record.events) || !Array.isArray(record.decisions) ||
@@ -42,7 +42,7 @@ export function createTracker(store, { sessionId, now = Date.now } = {}) {
     recordHand(record) { return mutate(() => { validateRecord(record); return store.put(record); }); },
     async getStats(window, { stakes } = {}) {
       if (!STATS_WINDOWS.includes(window)) throw new RangeError('Unknown stats window');
-      if (stakes != null && !STAKES[stakes]) throw new RangeError('Unknown stakes');
+      if (stakes != null && !Object.hasOwn(STAKES, stakes)) throw new RangeError('Unknown stakes');
       let records = await all();
       if (stakes) records = records.filter(record => record.stakes === stakes);
       if (window === 'session') records = records.filter(record => record.sessionId === sessionId);
@@ -51,7 +51,7 @@ export function createTracker(store, { sessionId, now = Date.now } = {}) {
       if (typeof window === 'number' && records.length >= window * 2) {
         const previous = summarize(records.slice(window, 2 * window), window, stakes);
         stats.trend = { bbPer100Delta: stats.bbPer100 - previous.bbPer100,
-          evLossPer100Delta: stats.evLossPer100 - previous.evLossPer100,
+          evLossPer100Delta: stats.coachedHands && previous.coachedHands ? stats.evLossPer100 - previous.evLossPer100 : null,
           vpipDelta: stats.vpip == null || previous.vpip == null ? null : stats.vpip - previous.vpip };
       }
       return stats;
@@ -72,8 +72,10 @@ export function createTracker(store, { sessionId, now = Date.now } = {}) {
           ids.add(record.id);
           added.push(record);
         }
-        if (mode === 'replace') await store.clear();
-        await store.putMany(added);
+        if (mode === 'replace') {
+          if (typeof store.replaceAll !== 'function') throw new TypeError('Hand storage does not support atomic replacement.');
+          await store.replaceAll(added);
+        } else await store.putMany(added);
         return { added: added.length, skipped };
       });
     },

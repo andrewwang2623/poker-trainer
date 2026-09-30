@@ -161,7 +161,8 @@ export function renderSettings(settings, onChange, appearance, onAppearanceChang
 
   const mix = element('div', 'mix-sliders');
   mix.setAttribute('aria-label', 'Opponent mix');
-  let values = percentages(settings.poolOverride ?? STAKES[settings.stakes].pool);
+  const stakes = Object.hasOwn(STAKES, settings.stakes) ? STAKES[settings.stakes] : STAKES.micro;
+  let values = percentages(settings.poolOverride ?? stakes.pool);
   const controls = new Map();
   for (const tier of TIERS) {
     const row = element('div', 'mix-row');

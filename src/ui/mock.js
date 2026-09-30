@@ -51,7 +51,7 @@ function tierForSeat(seat, poolOverride) {
 
 /** @returns {import('../shared/schemas.js').GameState} */
 export function createMockGameState({ stakes = 'micro', handNumber = 1, poolOverride = null } = {}) {
-  if (!STAKES[stakes]) throw new RangeError(`Unknown stakes: ${stakes}`);
+  if (!Object.hasOwn(STAKES, stakes)) throw new RangeError(`Unknown stakes: ${stakes}`);
   const players = HOLES.map((holeCards, seat) => {
     const tier = tierForSeat(seat, poolOverride);
     const blind = seat === 4 ? STAKES[stakes].sbChips : seat === 5 ? CHIPS_PER_BB : 0;
@@ -120,6 +120,8 @@ function deal(state, street, count) {
 }
 
 function finish(state, winnerSeat, showdown) {
+  if (!Object.hasOwn(STAKES, state.stakes)) throw new RangeError(`Unknown stakes: ${state.stakes}`);
+  const stakes = STAKES[state.stakes];
   collect(state);
   state.street = showdown ? 'showdown' : 'preflop';
   if (showdown) {
@@ -131,7 +133,7 @@ function finish(state, winnerSeat, showdown) {
     }
   }
   const rakeChips = showdown
-    ? Math.floor(Math.min(state.potCollected * STAKES[state.stakes].rakePct, STAKES[state.stakes].rakeCapBb * CHIPS_PER_BB))
+    ? Math.floor(Math.min(state.potCollected * stakes.rakePct, stakes.rakeCapBb * CHIPS_PER_BB))
     : 0;
   if (rakeChips) event(state, 'rake', { amount: rakeChips });
   const award = state.potCollected - rakeChips;

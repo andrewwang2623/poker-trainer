@@ -75,7 +75,7 @@ export function mountApp(rootEl, app = {}) {
     const title = element('div', 'brand');
     title.append(element('span', 'brand-mark', '♠'), element('span', '', 'Felt Theory'));
     const meta = element('div', 'masthead-meta');
-    const stakes = STAKES[state.stakes];
+    const stakes = Object.hasOwn(STAKES, state.stakes) ? STAKES[state.stakes] : undefined;
     meta.append(element('span', 'stake-pill', stakes
       ? `${stakes.label} · $${stakes.sb.toFixed(2)}/$${stakes.bb.toFixed(2)}` : state.stakes));
     const dashboardLink = element('a', 'dashboard-link', 'Dashboard ↗');

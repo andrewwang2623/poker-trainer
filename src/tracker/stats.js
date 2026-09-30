@@ -3,6 +3,10 @@ import { estimateProfitability } from './profitability.js';
 
 const rate = (numerator, denominator) => denominator ? numerator / denominator : null;
 export const evNet = record => record.heroEvNetBb ?? record.heroNetBb;
+const stakesConfig = stakes => {
+  if (!Object.hasOwn(STAKES, stakes)) throw new RangeError('Unknown stakes');
+  return STAKES[stakes];
+};
 
 /** Compute one window without accessing storage or the clock. */
 export function summarize(records, window, stakes) {
@@ -43,7 +47,7 @@ export function summarize(records, window, stakes) {
     topLeaks: [...leaks.values()].sort((a, b) => b.evLossBb - a.evLossBb || a.flagId.localeCompare(b.flagId)).slice(0, 5), trend: null,
   };
   // Mixed stakes use hand-weighted reference winrates and ranges instead of choosing one stake arbitrarily.
-  const configs = records.length ? records.map(record => STAKES[record.stakes]) : [STAKES[stakes] ?? STAKES.micro];
+  const configs = records.length ? records.map(record => stakesConfig(record.stakes)) : [stakesConfig(stakes ?? 'micro')];
   const average = fn => configs.reduce((total, config) => total + fn(config), 0) / configs.length;
   const ranges = Object.fromEntries(Object.keys(STAKES.micro.winningRanges).map(key =>
     [key, [average(config => config.winningRanges[key][0]), average(config => config.winningRanges[key][1])]]));

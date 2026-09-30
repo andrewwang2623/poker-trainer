@@ -133,7 +133,7 @@ test('summary handles overlapping windows, trends, patterns and unavailable rate
   const text = formatSummary(input);
   assert.match(text, /Hands: 1,240/);
   assert.match(text, /Last500  500  —/);
-  assert.match(text, /Trends \(last 500 vs previous 500\): bb\/100 \+3.1, EV loss\/100 -1.2, VPIP -2/);
+  assert.match(text, /Trends \(last 500 vs previous 500\): bb\/100 \+3.1, EV loss\/100 —, VPIP -2/);
   assert.match(text, /PAT_OVERFOLD_CBET .*value: 61%; target: 35%–55%/);
   assert.doesNotMatch(text, /undefined|NaN/);
   assert.deepEqual(input, before);

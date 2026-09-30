@@ -2,7 +2,7 @@ import { STAKES, PROFITABILITY_DISCLAIMER } from '../shared/schemas.js';
 
 /** The caller supplies opportunity counts not exposed by StatsSummary (PFR and AF). */
 export function estimateProfitability(stats, { ranges, referenceWinrate, opportunities = {} } = {}) {
-  const config = STAKES[stats.stakes] ?? STAKES.micro;
+  const config = Object.hasOwn(STAKES, stats.stakes) ? STAKES[stats.stakes] : STAKES.micro;
   ranges ??= config.winningRanges;
   referenceWinrate ??= config.referenceWinrate;
   const deviations = Object.entries(ranges).flatMap(([key, [lo, hi]]) => {

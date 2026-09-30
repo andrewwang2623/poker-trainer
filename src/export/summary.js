@@ -6,7 +6,7 @@ const windowName = window => typeof window === 'number' ? `Last${window}` : wind
 
 /** StatsSummary has no dates: omit the date range rather than infer it. */
 export function formatSummary({ stats, patterns = [], stakes }, { includePrompt = true } = {}) {
-  const config = STAKES[stakes];
+  const config = Object.hasOwn(STAKES, stakes) ? STAKES[stakes] : undefined;
   // Windows overlap: use All when available, otherwise the largest supplied sample.
   const primary = stats.find(stat => stat.window === 'all') ?? [...stats].sort((a, b) => b.hands - a.hands)[0];
   const lines = ['=== POKER TRAINER SUMMARY v1 ==='];
@@ -23,7 +23,7 @@ export function formatSummary({ stats, patterns = [], stakes }, { includePrompt 
   if (config) lines.push(`Winning ranges (${config.label.split(' ')[0]}): ${Object.entries(COLUMNS).map(([key, label]) => `${label} ${config.winningRanges[key].map(key === 'af' ? number : percent).join('–')}`).join(', ')}`);
   for (const stat of stats.filter(item => item.trend)) {
     const trend = stat.trend;
-    lines.push(`Trends (last ${stat.window} vs previous ${stat.window}): bb/100 ${signed(trend.bbPer100Delta)}, EV loss/100 ${signed(trend.evLossPer100Delta)}, VPIP ${trend.vpipDelta == null ? '—' : `${trend.vpipDelta >= 0 ? '+' : ''}${percent(trend.vpipDelta)}`}`);
+    lines.push(`Trends (last ${stat.window} vs previous ${stat.window}): bb/100 ${signed(trend.bbPer100Delta)}, EV loss/100 ${stat.coachedHands ? signed(trend.evLossPer100Delta) : '—'}, VPIP ${trend.vpipDelta == null ? '—' : `${trend.vpipDelta >= 0 ? '+' : ''}${percent(trend.vpipDelta)}`}`);
   }
   if (primary?.topLeaks.length) {
     lines.push('Top leaks:');

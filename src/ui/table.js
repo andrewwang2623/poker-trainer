@@ -50,7 +50,7 @@ export function renderTable(state, revealDelays = [], revealHands = false, rabbi
       element('span', '', `Pays on ${bounty.paysOn === 'showdownOnly' ? 'showdown only' : 'showdown or fold'}`));
     potSummary.append(node);
   }
-  const stakes = STAKES[state.stakes];
+  const stakes = Object.hasOwn(STAKES, state.stakes) ? STAKES[state.stakes] : undefined;
   if (stakes) {
     const rake = element('div', 'rake-readout');
     rake.setAttribute('aria-label', 'Table rake');

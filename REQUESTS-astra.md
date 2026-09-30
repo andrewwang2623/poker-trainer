@@ -13,3 +13,18 @@ SPEC.md §10 shows a From/To date range, but StatsSummary in schemas.js contains
 ## Engine `createdAt` and hand ID contract
 
 Resolved: the engine carries `createdAt` and generates the required SHA-256-based ID. The UI now trusts its returned state; the timestamp/ID patches and duplicate hash module have been removed.
+
+## Atomic HandStore replacement
+
+2026-09-30: please add `replaceAll(records): Promise<void>` to the HandStore contract in SPEC.md §6 and
+`src/shared/schemas.js`. It atomically replaces all hands, preserving the existing store if any write fails.
+Both owned storage adapters implement it now: one IndexedDB readwrite transaction, or preparation of a
+complete cloned map before swapping memory storage. Tracker replace imports require this operation and
+reject unsupported adapters before modifying data; merge imports keep using `putMany`.
+
+## Nullable EV-loss trend
+
+2026-09-30: please change `StatsSummary.trend.evLossPer100Delta` to `number|null` in
+`src/shared/schemas.js`. Per the owner's review decision, the delta is unavailable unless both compared
+windows contain coached hands. The tracker returns null and dashboard/summary export display an em dash;
+observed zero loss in two coached windows remains a numeric zero.
