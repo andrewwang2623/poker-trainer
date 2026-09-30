@@ -118,11 +118,7 @@ export function createEngineSession(engine, bots, initialSettings = {}, options 
           folded: state.players[state.heroSeat].folded, enabled: botPacing, outSpeed: outBotSpeed,
         }));
         if (current !== generation) return;
-        const view = engine.getView(state, seat);
-        const action = bots.decideAction(view, state.players[seat].profile, {
-          rng: botRng, heroStats: heroStats?.hands >= 30 ? heroStats : reads?.summary() ?? heroStats,
-        });
-        state = engine.applyAction(state, action);
+        playBotAction();
         notify();
       }
       if (current === generation) await finishHand();
@@ -132,13 +128,30 @@ export function createEngineSession(engine, bots, initialSettings = {}, options 
     return result;
   }
 
+  function playBotAction() {
+    const seat = state.actingSeat;
+    const view = engine.getView(state, seat);
+    const action = bots.decideAction(view, state.players[seat].profile, {
+      rng: botRng, heroStats: heroStats?.hands >= 30 ? heroStats : reads?.summary() ?? heroStats,
+    });
+    state = engine.applyAction(state, action);
+  }
+
   function newHand(nextSettings = settings) {
-    // A completed hand still belongs in history, even during its final UI notification.
-    const finishing = finishHand();
     generation++;
     cancelWait?.();
     cancelWait = null;
     pending = null;
+    // Once hero cannot decide again, finish the actual bot line on the existing RNG stream.
+    // No intermediate notifications: listeners must not deal another hand during this runout.
+    const hero = state.players[state.heroSeat];
+    if (hero.folded || hero.allIn) {
+      while (!engine.isComplete(state) && state.actingSeat !== null && state.actingSeat !== state.heroSeat) {
+        playBotAction();
+      }
+    }
+    // Use the same coach, reads, history and persistence path as a normally completed hand.
+    const finishing = finishHand();
     settings = nextSettings;
     startHand();
     return Promise.all([finishing, advanceBots()]).then(() => state);
