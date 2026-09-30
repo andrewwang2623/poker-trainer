@@ -6,6 +6,10 @@
 // Two effective-stack corrections the spec's formulas leave implicit: a call or raise only wins
 // what opponents can match (chips beyond hero's all-in come back uncalled), so P and A are capped
 // at the matchable amount.
+// Two overbet guards (REQUESTS-claude.md): taken literally, F keeps growing with A/P while E' stays
+// 0.85·E, so a 20×-pot shove scores best with the nuts and as a bluff alike. Folds stop growing past
+// FOLD_SIZE_CAP × pot, and a bet or raise of f > 1 pot is called by a tighter range:
+// E' = 0.85·E / f^OVERBET_EXP. Bets up to pot (every ½/¾/pot preset) use §8.2 unchanged.
 
 /** Realization: river or all-in, in position, out of position. */
 export const REALIZATION = Object.freeze({ final: 1, inPosition: 0.95, outOfPosition: 0.85 });
@@ -16,6 +20,10 @@ export const FOLD_BASE = 0.6;
 export const FOLD_SLOPE = 0.53;
 export const FOLD_MIN = 0.05;
 export const FOLD_MAX = 0.9;
+/** A/P above this adds no fold equity (overbet guard). */
+export const FOLD_SIZE_CAP = 2;
+/** E' shrinks by f^OVERBET_EXP for a bet or raise of f > 1 pot (overbet guard). */
+export const OVERBET_EXP = 0.5;
 /** Bet/raise candidates as a share of the pot (a raise: of the pot after calling). */
 export const BET_SIZES = Object.freeze([0.5, 0.75, 1]);
 
@@ -59,7 +67,8 @@ export function foldEstimate(opponents, addBb, potBb) {
   let f = 1;
   for (const o of opponents) {
     if (o.allIn) return 0;
-    f *= clamp(o.foldToBet * (FOLD_BASE + (FOLD_SLOPE * addBb) / potBb), FOLD_MIN, FOLD_MAX);
+    const size = Math.min(FOLD_SIZE_CAP, addBb / potBb);
+    f *= clamp(o.foldToBet * (FOLD_BASE + FOLD_SLOPE * size), FOLD_MIN, FOLD_MAX);
   }
   return f;
 }
@@ -67,6 +76,9 @@ export function foldEstimate(opponents, addBb, potBb) {
 export const evCheck = (E, P, R) => E * P * R;
 export const evCall = (E, P, C, R) => E * (P + C) * R - C;
 export const evBet = (E, P, A, R, F) => F * P + (1 - F) * (CALLED_EQUITY * E * (P + 2 * A) * R - A);
+
+/** Equity to use in evBet for a bet or raise of `frac` pot: E, tightened for overbets. */
+export const overbetEquity = (E, frac) => (frac > 1 ? E / frac ** OVERBET_EXP : E);
 
 const round2 = (x) => Math.round(x * 100) / 100;
 
@@ -148,9 +160,10 @@ export function evaluateCandidates(spot, candidates) {
       const A = (c.to - spot.heroCommitted) / 100;
       const matchable = (Math.min(c.to, reach) - spot.heroCommitted) / 100;
       const R = c.to >= spot.legal.maxTo ? REALIZATION.final : streetR;
+      const Ec = overbetEquity(E, (A - C) / (P + C));
       fold = foldEstimate(opps, A, P);
-      ev = evBet(E, P, Math.max(matchable, C), R, fold);
-      ev += foldPaid * fold + bounty * (1 - fold) * CALLED_EQUITY * E;
+      ev = evBet(Ec, P, Math.max(matchable, C), R, fold);
+      ev += foldPaid * fold + bounty * (1 - fold) * CALLED_EQUITY * Ec;
       addBb = A;
     }
     return { ...c, ev: round2(ev), fold, addBb };

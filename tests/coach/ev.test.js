@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   evCheck, evCall, evBet, foldEstimate, candidateActions, evaluateCandidates, severityOf, sizeKey,
-  REALIZATION, CALLED_EQUITY,
+  REALIZATION, CALLED_EQUITY, overbetEquity,
 } from '../../src/coach/ev.js';
 
 const close = (a, b, eps = 1e-9) => assert.ok(Math.abs(a - b) < eps, `${a} vs ${b}`);
@@ -25,6 +25,23 @@ test('fold estimate: product of clamped per-opponent folds; an all-in opponent n
   close(foldEstimate([{ foldToBet: 1 }], 30, 10), 0.9, 1e-12);
   assert.equal(foldEstimate([{ foldToBet: 0.5 }, { foldToBet: 0.5, allIn: true }], 5, 10), 0);
   assert.equal(foldEstimate([], 5, 10), 0);
+});
+
+test('overbet guards: fold equity capped at 2× pot, calling equity E/√f past pot', () => {
+  const opp = [{ foldToBet: 0.4 }];
+  close(foldEstimate(opp, 20, 10), foldEstimate(opp, 200, 10));
+  assert.ok(foldEstimate(opp, 20, 10) > foldEstimate(opp, 10, 10));
+  assert.equal(overbetEquity(0.8, 1), 0.8);
+  assert.equal(overbetEquity(0.8, 0.5), 0.8);
+  close(overbetEquity(0.8, 4), 0.4);
+  // The nuts with 100bb behind in a 5bb pot: a pot bet beats a 19.5× pot shove.
+  const nuts = flopSpot({ pot: 500, equity: 1, legal: { types: ['check', 'bet'], toCall: 0, minTo: 100, maxTo: 9750 } });
+  const evs = Object.fromEntries(evaluateCandidates(nuts, candidateActions(nuts, null)).map((c) => [c.key, c.ev]));
+  assert.ok(evs['bet:1'] > evs.allIn && evs['bet:1'] > evs.check, JSON.stringify(evs));
+  // Pure air into a 12bb pot: the shove is no longer 'best'.
+  const air = flopSpot({ pot: 1200, equity: 0, street: 'river' });
+  const airEvs = evaluateCandidates(air, candidateActions(air, null));
+  assert.ok(airEvs.find((c) => c.key === 'allIn').ev < 0);
 });
 
 test('severity cutoffs', () => {
@@ -83,9 +100,10 @@ test('EV caps what an all-in can win at what opponents can match', () => {
     opponents: [{ seat: 1, allIn: false, stack: 2000, committedStreet: 0, stats: { foldToBet: 0.4 } }],
   });
   const [shove] = evaluateCandidates(spot, [{ key: 'allIn', type: 'bet', to: 10000 }]);
-  const F = 0.9; // clamp(0.4 × (0.6 + 0.53 × 100/10)): fold odds use the full shove
+  const F = 0.4 * (0.6 + 0.53 * 2); // folds stop growing past a 2× pot overbet
   close(shove.fold, F);
-  close(shove.ev, Math.round((F * 10 + (1 - F) * (0.85 * 0.5 * (10 + 40) * 1 - 20)) * 100) / 100);
+  const Ec = 0.5 / Math.sqrt(10); // a 10× pot bet is called by a tighter range
+  close(shove.ev, Math.round((F * 10 + (1 - F) * (0.85 * Ec * (10 + 40) * 1 - 20)) * 100) / 100);
 
   // Hero calls a 100bb shove with 20bb: the 80bb excess comes back.
   const call = {
